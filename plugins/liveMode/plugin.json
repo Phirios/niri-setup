@@ -1,0 +1,13 @@
+{
+    "id": "liveMode",
+    "name": "Live Mode",
+    "description": "Shows when your screen is being shared, silences notifications and keeps the screen awake until the share ends",
+    "version": "1.0.0",
+    "author": "firatege",
+    "type": "widget",
+    "capabilities": ["dankbar-widget"],
+    "component": "./LiveWidget.qml",
+    "icon": "cast",
+    "settings": "./LiveSettings.qml",
+    "permissions": ["settings_read", "settings_write"]
+}

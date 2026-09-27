@@ -1,0 +1,4 @@
+// Personal keybinds. DMS never rewrites this file.
+binds {
+    Mod+D repeat=false hotkey-overlay-title="Show Desktop" { spawn "sh" "-c" "exec ~/.config/niri/scripts/show-desktop.sh"; }
+}

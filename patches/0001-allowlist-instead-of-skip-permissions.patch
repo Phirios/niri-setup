@@ -1,0 +1,180 @@
+diff --git a/AgentService.qml b/AgentService.qml
+index 4365890..9021875 100644
+--- a/AgentService.qml
++++ b/AgentService.qml
+@@ -27,7 +27,11 @@ Singleton {
+     property string claudeModel: "haiku"
+     property bool extendedThinking: false
+     property string systemPrompt: "You are a concise desktop assistant on Linux with niri (Wayland compositor) and DankMaterialShell. " +
+-        "You have full tool access (Bash, Read, Write, Edit). Execute actions immediately, never ask for confirmation. " +
++        "You work from an allowlist: niri window and workspace commands, dms ipc calls, gtk-launch, xdg-open, " +
++        "playerctl, notify-send, read-only system info (df, free, uptime, date, ls, du, lsblk, ps, pgrep, uname), " +
++        "reading and searching files in the user's Downloads, Documents, Pictures, Desktop, Videos and Music folders, " +
++        "and web search. You cannot write files or run other commands. When a request needs something outside the " +
++        "allowlist, say so in one sentence instead of retrying. Execute allowed actions immediately. " +
+         "Respond in user's language. Be concise.\n\n" +
+         "NIRI COMMANDS:\n" +
+         "- List windows: niri msg -j windows\n" +
+@@ -42,11 +46,12 @@ Singleton {
+         "- Focus left/right/up/down: niri msg action focus-column-left|right, focus-window-up|down\n" +
+         "- Move column: niri msg action move-column-left|right\n" +
+         "- Toggle overview: niri msg action toggle-overview\n\n" +
+-        "MUSIC: ~/go/bin/spogo (play, pause, next, prev, status, search track X, volume N)\n\n" +
++        "MUSIC: playerctl (play, pause, play-pause, next, previous, status, metadata, volume N)\n\n" +
++        "APPS: gtk-launch ID starts an installed app by its desktop file id, e.g. gtk-launch org.mozilla.firefox\n" +
++        "FILES AND LINKS: xdg-open PATH_OR_URL\n" +
++        "SHELL: dms ipc call TARGET FUNCTION (lock lock, theme toggle, night toggle, wallpaper next, ...)\n\n" +
+         "Match fuzzy — 'brave' matches 'brave-browser-nightly', 'whatsapp' matches 'WhatsApp Web — Mozilla Firefox'.\n\n" +
+-        "IMPORTANT: When launching applications or running long-lived processes, ALWAYS detach them from the shell. " +
+-        "Use: setsid <command> >/dev/null 2>&1 & disown\n" +
+-        "NEVER run GUI apps in the foreground — always background and detach them.\n\n" +
++        "Run one command per tool call: chained commands, pipes to other programs and command substitution are refused.\n\n" +
+         "Your working directory is a private state dir, not the user's home. " +
+         "For user files always use ~ or absolute paths."
+ 
+@@ -62,6 +67,9 @@ Singleton {
+     property string voiceModel: "auto"
+     property string voiceLanguage: "auto"
+     property string voiceVenv: ""
++    // Voice needs the Whisper venv from install.sh --voice; without it the
++    // microphone is never opened.
++    property bool voiceEnabled: false
+ 
+     property bool busy: false
+     property string statusText: tr("status.ready")
+@@ -145,6 +153,10 @@ Singleton {
+     }
+ 
+     function startVoice(source) {
++        if (!voiceEnabled) {
++            voiceError = "Voice input is switched off in the plugin settings";
++            return;
++        }
+         if (busy || voiceState !== "idle") return;
+         voiceSource = source === "output" ? "output" : "mic";
+         voiceError = "";
+@@ -207,6 +219,7 @@ Singleton {
+     function warmupVoice() {
+         // Прогрев Whisper-модели и PipeWire для первой записи:
+         // записываем 1 секунду тишины, отправляем на транскрибацию, игнорируем результат.
++        if (!voiceEnabled) return;
+         voiceWarmupInProgress = true;
+         
+         var warmupPath = (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/dms-agent-warmup.wav";
+@@ -378,7 +391,8 @@ Singleton {
+     // Checked once per boot: the marker lives in the runtime dir, which is wiped
+     // on reboot but survives a shell restart — otherwise updating would restart
+     // the shell, which would check again, which would...
+-    property bool autoUpdate: true
++    // Off unless switched on: an update is new code that this shell then runs.
++    property bool autoUpdate: false
+ 
+     readonly property string updateScript: decodeURIComponent(String(Qt.resolvedUrl("update.sh")).replace(/^file:\/\//, ""))
+     readonly property string updateMarker: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/dms-agent-update-checked"
+@@ -655,7 +669,7 @@ Singleton {
+                 + "[ -d \"$dir\" ] || continue; grep -ril " + shellQuote(q) + " \"$dir\"/*.desktop 2>/dev/null; done "
+                 + "| while read f; do name=$(grep -m1 '^Name=' \"$f\" | cut -d= -f2); "
+                 + "exec=$(grep -m1 '^Exec=' \"$f\" | cut -d= -f2 | sed 's/ %[a-zA-Z]//g'); "
+-                + "echo \"$name | cmd: $exec\"; done | head -10";
++                + "echo \"$name | id: $(basename \"$f\" .desktop) | cmd: $exec\"; done | head -10";
+             runQuietExit(cmd, function(output) {
+                 callback("[Matching apps]\n" + String(output).trim());
+             });
+@@ -713,6 +727,37 @@ Singleton {
+         }
+     }
+ 
++    // Everything the agent may do without anyone approving it. There is nobody to
++    // ask in a chat bubble, so whatever is not listed here is refused outright.
++    readonly property var allowedTools: [
++        "Read", "Glob", "Grep", "WebSearch",
++        "Bash(niri msg -j:*)", "Bash(niri msg --json:*)",
++        "Bash(niri msg action focus-:*)", "Bash(niri msg action close-window:*)",
++        "Bash(niri msg action move-:*)", "Bash(niri msg action fullscreen-window:*)",
++        "Bash(niri msg action maximize-column:*)", "Bash(niri msg action toggle-:*)",
++        "Bash(niri msg action center-column:*)", "Bash(niri msg action screenshot:*)",
++        "Bash(dms ipc call:*)", "Bash(gtk-launch:*)", "Bash(xdg-open:*)",
++        "Bash(playerctl:*)", "Bash(notify-send:*)",
++        "Bash(df:*)", "Bash(free:*)", "Bash(uptime:*)", "Bash(date:*)", "Bash(ls:*)",
++        "Bash(du:*)", "Bash(lsblk:*)", "Bash(ps:*)", "Bash(pgrep:*)", "Bash(uname:*)"
++    ]
++    // File tools are confined to the working directory plus these folders.
++    readonly property var readableFolders: ["Downloads", "Documents", "Pictures", "Desktop", "Videos", "Music"]
++
++    function permissionFlags() {
++        return " --restricted --tools " + shellQuote("Bash,Read,Glob,Grep,WebSearch")
++            + " --permission-prompts none"
++            + " --allowedTools " + allowedTools.map(shellQuote).join(" ");
++    }
++
++    // Folders that do not exist are left out: claude refuses to start otherwise.
++    function readableFolderFlags() {
++        return readableFolders.map(function(name) {
++            var dir = shellQuote(homeDir + "/" + name);
++            return "$([ -d " + dir + " ] && printf '%s\\n' --add-dir " + dir + ")";
++        }).join(" ");
++    }
++
+     function callClaude(prompt) {
+         statusText = tr(extendedThinking ? "status.thinking" : "status.processing");
+         _gotResult = false;
+@@ -723,7 +768,8 @@ Singleton {
+         var cmd = cdWorkDir + "exec claude -p"
+             + " --model " + shellQuote(claudeModel)
+             + " --output-format stream-json --verbose"
+-            + " --dangerously-skip-permissions"
++            + permissionFlags()
++            + " " + readableFolderFlags()
+             + " --append-system-prompt " + shellQuote(systemPrompt)
+             + (sessionId ? " --resume " + shellQuote(sessionId) : "")
+             + " 2>/dev/null <<< " + shellQuote(prompt);
+diff --git a/DmsAgent.qml b/DmsAgent.qml
+index 762fcf8..bd6d30f 100644
+--- a/DmsAgent.qml
++++ b/DmsAgent.qml
+@@ -81,7 +81,8 @@ PluginComponent {
+         AgentService.voiceLanguage = pluginData.voiceLanguage || "auto";
+         AgentService.voiceVenv = pluginData.voiceVenv || "";
+         AgentService.voiceDevice = pluginData.voiceDevice || "";
+-        AgentService.autoUpdate = pluginData.autoUpdate !== false;
++        AgentService.autoUpdate = pluginData.autoUpdate === true;
++        AgentService.voiceEnabled = pluginData.voiceEnabled === true;
+         AgentService.checkForUpdates();
+         if (pluginData.hotkey !== undefined) AgentService.applyHotkey(pluginData.hotkey);
+     }
+diff --git a/DmsAgentSettings.qml b/DmsAgentSettings.qml
+index 919b2e4..545c168 100644
+--- a/DmsAgentSettings.qml
++++ b/DmsAgentSettings.qml
+@@ -158,7 +158,7 @@ PluginSettings {
+                     settingKey: "autoUpdate"
+                     label: "Auto-update"
+                     description: "Pull new versions from the plugin's repository once per boot and restart the shell to apply them. Local edits are never touched."
+-                    defaultValue: true
++                    defaultValue: false
+                 }
+ 
+                 StringSetting {
+@@ -174,7 +174,7 @@ PluginSettings {
+                     label: "Chat Hotkey (niri)"
+                     description: "Toggles the chat on the focused monitor, e.g. Mod+Space or Mod+Shift+A. Empty removes it. Written to ~/.config/niri/dms-ai-agent.kdl"
+                     placeholder: "Mod+Space"
+-                    defaultValue: "Mod+Space"
++                    defaultValue: "Mod+A"
+                 }
+             }
+         }
+@@ -199,6 +199,13 @@ PluginSettings {
+                     color: Theme.surfaceText
+                 }
+ 
++                ToggleSetting {
++                    settingKey: "voiceEnabled"
++                    label: "Enable Voice Input"
++                    description: "Needs the Whisper environment from install.sh. While off, the microphone is never opened."
++                    defaultValue: false
++                }
++
+                 SelectionSetting {
+                     settingKey: "voiceModel"
+                     label: "Whisper Model"

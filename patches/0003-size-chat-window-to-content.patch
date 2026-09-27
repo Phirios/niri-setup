@@ -1,0 +1,39 @@
+diff --git a/DmsAgent.qml b/DmsAgent.qml
+index bd6d30f..63d652a 100644
+--- a/DmsAgent.qml
++++ b/DmsAgent.qml
+@@ -138,10 +138,13 @@ PluginComponent {
+         implicitWidth: 660
+         // Отсчитывается от монитора, на котором панель показана, за вычетом
+         // отступа снизу; на маленьком экране не должна упереться в бар.
+-        implicitHeight: {
++        readonly property int maxHeight: {
+             var available = (screen ? screen.height : 1080) - WlrLayershell.margins.bottom - 48;
+             return Math.max(420, Math.round(available * AgentService.panelHeightPercent / 100));
+         }
++        implicitHeight: agentChat.needsFullHeight
++            ? maxHeight
++            : Math.min(maxHeight, Math.ceil(agentChat.neededHeight) + animContainer.anchors.margins * 2)
+ 
+         Item {
+             id: animContainer
+diff --git a/DmsAgentChat.qml b/DmsAgentChat.qml
+index 72fb4b9..f8c3c66 100644
+--- a/DmsAgentChat.qml
++++ b/DmsAgentChat.qml
+@@ -11,6 +11,15 @@ Item {
+ 
+     signal escapePressed()
+ 
++    // Height the chat needs right now. The window shrinks to it, so it covers no more
++    // of the screen than it shows; that also keeps the area hidden from screen shares small.
++    readonly property real tooltipRoom: 40
++    readonly property bool needsFullHeight: historyDropdown.visible || confirmDialog.visible
++    readonly property real neededHeight: inputCard.height + Math.max(
++        tooltipRoom,
++        messageColumn.height > 0 ? messageColumn.height + messageFlick.anchors.bottomMargin : 0,
++        modelDropdown.visible ? modelDropdown.height + modelDropdown.anchors.bottomMargin : 0)
++
+     // Copying a bubble takes the focus away from the input field, so it is handed
+     // straight back — otherwise typing silently goes nowhere after a copy.
+     function copyToClipboard(text) {
