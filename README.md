@@ -30,6 +30,7 @@ Use `./install.sh --skip-packages` when niri and DMS are already installed.
 | Theme | `Ink`: near-black surfaces, `#d97757` accent, blur on, translucent bar and popups |
 | AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
+| Live wallpaper | A video wallpaper through mpvpaper, see below |
 | AI chat panel | [dms-ai-agent](https://github.com/Cha1000000/dms-ai-agent) at a pinned commit, with the patches in `patches/` |
 
 Anything that already exists is copied to a `.bak-<timestamp>` sibling before it is replaced.
@@ -45,6 +46,7 @@ Anything that already exists is copied to a `.bak-<timestamp>` sibling before it
 | `Super+Q` | Close window |
 | `Super+D` | Show desktop, press again to go back |
 | `Super+A` | AI chat |
+| `Super+B` | Cycle power profile |
 | `Super+Comma` | DMS settings |
 | `Super+Shift+/` | All shortcuts |
 | `Super+Shift+E` | Leave niri |
@@ -63,6 +65,24 @@ you had Do Not Disturb on already, it stays on. Both can be switched off in the 
 the AI chat, notifications, clipboard history, Wi-Fi password dialogs, password prompts and
 common password managers. You still see them; viewers get a black rectangle the size of the
 whole surface. Add a `match app-id=...` line for any other app you want hidden.
+
+## Live wallpaper
+
+The installer builds [mpvpaper](https://github.com/GhostNaN/mpvpaper) into `~/.local/bin` and
+installs a plugin that plays a video as the wallpaper, one player per monitor. Give it a video
+when installing:
+
+```bash
+./install.sh --wallpaper ~/Downloads/some-loop.mp4
+```
+
+or later in Settings > Plugins > Live Wallpaper. Videos that are not VP9 or AV1 are converted
+to VP9 on install, because on an Intel GPU those decode in hardware at about 3% of one core,
+while H.264 fell back to software and took a full core in testing.
+
+Each monitor plays only while its workspace is empty or the overview is open, which is when the
+wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The
+still wallpaper stays underneath.
 
 ## The chat panel and what it may do
 
@@ -100,5 +120,5 @@ The configuration lives in `~/.config/niri` and `~/.config/DankMaterialShell`.
 
 ```bash
 python3 -m unittest discover -s tests
-node --test tests/live.test.js
+node --test tests/live.test.js tests/wallpaper.test.js
 ```

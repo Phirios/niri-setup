@@ -20,7 +20,8 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertIn("aiLimitCounter", merged["dankBarRightWidgets"])
         self.assertIn("dmsAgent", merged["dankBarRightWidgets"])
         self.assertEqual(merged["dankBarRightWidgets"][0], "liveMode")
-        self.assertEqual(merged["dankBarTransparency"], 0.55)
+        self.assertEqual(merged["dankBarTransparency"], 0.7)
+        self.assertEqual(merged["dankBarWidgetTransparency"], 0.9)
         self.assertNotIn("barConfigs", merged)
 
     def test_existing_bar_gets_the_widgets_next_to_the_clipboard(self):
@@ -30,8 +31,8 @@ class ShellSettingsTest(unittest.TestCase):
 
         self.assertEqual(
             bar["rightWidgets"], ["liveMode", "systemTray", "clipboard", "aiLimitCounter", "dmsAgent", "battery"])
-        self.assertEqual(bar["transparency"], 0.55)
-        self.assertEqual(bar["widgetTransparency"], 0.5)
+        self.assertEqual(bar["transparency"], 0.7)
+        self.assertEqual(bar["widgetTransparency"], 0.9)
 
     def test_widgets_are_appended_when_there_is_no_clipboard(self):
         current = {"barConfigs": [{"id": "default", "rightWidgets": ["battery"]}]}
@@ -75,8 +76,21 @@ class PluginSettingsTest(unittest.TestCase):
         self.assertTrue(merged["aiLimitCounter"]["enabled"])
         self.assertTrue(merged["dmsAgent"]["enabled"])
         self.assertTrue(merged["liveMode"]["enabled"])
+        self.assertTrue(merged["liveWallpaper"]["enabled"])
+        self.assertEqual(merged["liveWallpaper"]["videoPath"], "")
+        self.assertTrue(merged["liveWallpaper"]["stopWhileGaming"])
         self.assertFalse(merged["dmsAgent"]["autoUpdate"])
         self.assertFalse(merged["dmsAgent"]["voiceEnabled"])
+
+    def test_a_chosen_wallpaper_video_is_kept(self):
+        merged = merge_plugin_settings({"liveWallpaper": {"videoPath": "~/Videos/loop.webm"}})
+
+        self.assertEqual(merged["liveWallpaper"]["videoPath"], "~/Videos/loop.webm")
+
+    def test_a_wallpaper_given_to_the_installer_replaces_the_old_one(self):
+        merged = merge_plugin_settings({"liveWallpaper": {"videoPath": "~/old.webm"}}, "/home/me/new.webm")
+
+        self.assertEqual(merged["liveWallpaper"]["videoPath"], "/home/me/new.webm")
 
     def test_choices_already_made_are_kept_except_the_safety_switches(self):
         current = {

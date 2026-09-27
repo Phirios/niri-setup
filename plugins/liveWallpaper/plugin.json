@@ -1,0 +1,13 @@
+{
+    "id": "liveWallpaper",
+    "name": "Live Wallpaper",
+    "description": "Plays a video as the wallpaper with mpvpaper, and stops on battery and while a game is running",
+    "version": "1.0.0",
+    "author": "firatege",
+    "type": "daemon",
+    "capabilities": ["wallpaper"],
+    "component": "./LiveWallpaperDaemon.qml",
+    "icon": "movie",
+    "settings": "./LiveWallpaperSettings.qml",
+    "permissions": ["settings_read", "settings_write"]
+}

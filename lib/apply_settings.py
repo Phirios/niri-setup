@@ -17,12 +17,17 @@ LEADING_WIDGET = "liveMode"
 DEFAULT_RIGHT_WIDGETS = (
     "systemTray", "clipboard", "cpuUsage", "memUsage", "notificationButton", "battery", "controlCenterButton",
 )
-BAR_TRANSPARENCY = 0.55
-WIDGET_TRANSPARENCY = 0.5
+BAR_TRANSPARENCY = 0.7
+# Opaque enough that each bar item reads as its own pill over a busy wallpaper.
+WIDGET_TRANSPARENCY = 0.9
 POPUP_TRANSPARENCY = 0.78
 
 AGENT_DEFAULTS = {"enabled": True, "claudeModel": "haiku", "pillLabel": "Claude", "backgroundOpacity": 80}
 LIVE_DEFAULTS = {"silenceNotifications": True, "keepAwake": True}
+# Without a video the plugin does nothing; it is chosen in the settings or with --wallpaper.
+WALLPAPER_DEFAULTS = {
+    "videoPath": "", "pauseWhenHidden": True, "stopOnBattery": True, "stopWhileGaming": True,
+}
 # New code and an open microphone are opt-in, whatever was configured before.
 AGENT_SAFETY = {"autoUpdate": False, "voiceEnabled": False}
 
@@ -66,12 +71,16 @@ def merge_shell_settings(current, theme_file):
     return {**current, **look, "barConfigs": [main_bar, *bars[1:]]}
 
 
-def merge_plugin_settings(current):
+def merge_plugin_settings(current, wallpaper=None):
+    chosen_video = {"videoPath": wallpaper} if wallpaper else {}
     return {
         **current,
         "aiLimitCounter": {"provider": "claude", **current.get("aiLimitCounter", {}), "enabled": True},
         "dmsAgent": {**AGENT_DEFAULTS, **current.get("dmsAgent", {}), "enabled": True, **AGENT_SAFETY},
         "liveMode": {**LIVE_DEFAULTS, **current.get("liveMode", {}), "enabled": True},
+        "liveWallpaper": {
+            **WALLPAPER_DEFAULTS, **current.get("liveWallpaper", {}), **chosen_video, "enabled": True,
+        },
     }
 
 
@@ -101,6 +110,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config-dir", required=True, type=Path, help="DankMaterialShell config directory")
     parser.add_argument("--theme-file", required=True, type=Path, help="installed location of ink.json")
+    parser.add_argument("--wallpaper", type=Path, help="video for the live wallpaper")
     args = parser.parse_args(argv)
 
     if not args.theme_file.is_file():
@@ -111,7 +121,8 @@ def main(argv):
     settings_path = args.config_dir / "settings.json"
     plugins_path = args.config_dir / "plugin_settings.json"
     write_json(settings_path, merge_shell_settings(read_json(settings_path), str(args.theme_file)), stamp)
-    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path)), stamp)
+    wallpaper = str(args.wallpaper) if args.wallpaper else None
+    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path), wallpaper), stamp)
 
 
 if __name__ == "__main__":

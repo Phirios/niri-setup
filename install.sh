@@ -3,8 +3,9 @@
 # and the AI chat panel. Your current desktop (KDE, GNOME) stays installed and untouched;
 # niri is added as one more session on the login screen.
 #
-#   ./install.sh                  everything
-#   ./install.sh --skip-packages  configuration only (niri and dms are already installed)
+#   ./install.sh                     everything
+#   ./install.sh --wallpaper FILE    also use FILE as the live wallpaper (converted to VP9)
+#   ./install.sh --skip-packages     configuration only (niri and dms are already installed)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,7 +34,13 @@ AGENT_DIR="$DMS_DIR/plugins/dmsAgent"
 LIMIT_REPO="https://github.com/firatege/AILimitCounter"
 LIMIT_BRANCH="feat/dms-plugin"
 LIMIT_SRC="$DATA_HOME/niri-setup/AILimitCounter"
-LIVE_DIR="$DMS_DIR/plugins/liveMode"
+LOCAL_PLUGINS=(liveMode liveWallpaper)
+WALLPAPER_DIR="$HOME/Videos/Wallpapers"
+
+# mpvpaper plays the live wallpaper. Fedora does not package it, so it is built from this tag.
+MPVPAPER_REPO="https://github.com/GhostNaN/mpvpaper"
+MPVPAPER_TAG="1.9"
+MPVPAPER_BUILD_PACKAGES=(mpv mpv-devel meson ninja-build gcc wayland-devel wayland-protocols-devel mesa-libEGL-devel ffmpeg-free)
 
 NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
@@ -51,6 +58,39 @@ install_packages() {
   sudo dnf install -y "${PACKAGES[@]}"
   sudo dnf copr enable -y "$DMS_COPR"
   sudo dnf install -y dms
+  sudo dnf install -y "${MPVPAPER_BUILD_PACKAGES[@]}"
+}
+
+build_mpvpaper() {
+  step "Building mpvpaper for the live wallpaper"
+  if command -v mpvpaper >/dev/null || [[ -x "$HOME/.local/bin/mpvpaper" ]]; then
+    note "already installed"
+    return
+  fi
+  local build
+  build="$(mktemp -d)"
+  git clone --quiet --depth 1 --branch "$MPVPAPER_TAG" "$MPVPAPER_REPO" "$build/mpvpaper"
+  meson setup "$build/mpvpaper/build" "$build/mpvpaper" --buildtype=release >/dev/null
+  ninja -C "$build/mpvpaper/build" >/dev/null
+  install -Dm755 "$build/mpvpaper/build/mpvpaper" "$HOME/.local/bin/mpvpaper"
+  rm -rf "$build"
+  note "installed at $HOME/.local/bin/mpvpaper"
+}
+
+# VP9 decodes on the GPU; the H.264 most wallpaper sites ship took a full CPU core in testing.
+prepare_wallpaper() {
+  local source="$1" target
+  [[ -f "$source" ]] || fail "wallpaper not found: $source"
+  mkdir -p "$WALLPAPER_DIR"
+  target="$WALLPAPER_DIR/$(basename "${source%.*}").webm"
+  if [[ "$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$source")" =~ ^(vp9|av1)$ ]]; then
+    cp "$source" "$target"
+  else
+    note "converting $(basename "$source") to VP9, this takes a few minutes" >&2
+    ffmpeg -v error -y -i "$source" -an -c:v libvpx-vp9 -b:v 0 -crf 30 -row-mt 1 -cpu-used 4 \
+      -pix_fmt yuv420p "$target" || fail "could not convert $source"
+  fi
+  printf '%s\n' "$target"
 }
 
 backup_dir() {
@@ -123,24 +163,33 @@ install_agent() {
     || note "claude CLI not found: install Claude Code and log in before using the chat panel"
 }
 
-install_live_mode() {
-  step "Installing live mode"
-  mkdir -p "$LIVE_DIR"
-  rm -rf "${LIVE_DIR:?}/"*
-  cp -r "$ROOT/plugins/liveMode/." "$LIVE_DIR/"
-  note "installed at $LIVE_DIR"
+install_local_plugins() {
+  step "Installing live mode and the live wallpaper"
+  local plugin dest
+  for plugin in "${LOCAL_PLUGINS[@]}"; do
+    dest="$DMS_DIR/plugins/$plugin"
+    mkdir -p "$dest"
+    rm -rf "${dest:?}/"*
+    cp -r "$ROOT/plugins/$plugin/." "$dest/"
+    note "installed at $dest"
+  done
 }
 
 setup_shell() {
   step "Applying the Ink theme and bar settings"
   install -Dm644 "$ROOT/dms/themes/ink.json" "$DMS_DIR/themes/ink.json"
-  python3 "$ROOT/lib/apply_settings.py" --config-dir "$DMS_DIR" --theme-file "$DMS_DIR/themes/ink.json"
+  local wallpaper_args=()
+  [[ -z "$WALLPAPER" ]] || wallpaper_args=(--wallpaper "$WALLPAPER")
+  python3 "$ROOT/lib/apply_settings.py" --config-dir "$DMS_DIR" --theme-file "$DMS_DIR/themes/ink.json" \
+    "${wallpaper_args[@]}"
 }
 
 finish() {
   cat <<'DONE'
 
 Done. The plugins are already enabled and in the bar.
+For a live wallpaper, pick a video in Settings > Plugins > Live Wallpaper,
+or run this again with --wallpaper FILE.
 
   1. Log out.
   2. On the login screen pick the "niri" session, then log in.
@@ -150,6 +199,7 @@ Keys (Super is the Windows key):
   Super+T       terminal            Super+Space   app launcher
   Super+Q       close window        Super+D       show desktop
   Super+A       AI chat             Super+Comma   settings
+  Super+B       power profile
   Super+Shift+/ all shortcuts       Super+Shift+E leave niri
 
 If DMS was already running, restart it to load the changes:
@@ -158,11 +208,12 @@ DONE
 }
 
 main() {
-  local skip_packages=0
+  local skip_packages=0 wallpaper_source=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-packages) skip_packages=1 ;;
-      -h|--help) sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --wallpaper) wallpaper_source="${2:?--wallpaper needs a video file}"; shift ;;
+      -h|--help) sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) fail "unknown option: $1" ;;
     esac
     shift
@@ -178,7 +229,14 @@ main() {
   setup_niri
   install_limit_counter
   install_agent
-  install_live_mode
+  build_mpvpaper
+  install_local_plugins
+  WALLPAPER=""
+  if [[ -n "$wallpaper_source" ]]; then
+    step "Preparing the live wallpaper"
+    WALLPAPER="$(prepare_wallpaper "$wallpaper_source")"
+    note "using $WALLPAPER"
+  fi
   setup_shell
   finish
 }
