@@ -6,6 +6,8 @@
 #   ./install.sh                     everything
 #   ./install.sh --wallpaper FILE    also use FILE as the live wallpaper (converted to VP9)
 #   ./install.sh --skip-packages     configuration only (niri and dms are already installed)
+#   ./install.sh --voice             also set up voice input for the AI chat (local Whisper, 1-3 GB)
+#   ./install.sh --gaming            also apply the gaming tweaks in system/ (asks for sudo)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,7 +48,11 @@ NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
   'include optional=true "custom/privacy.kdl"'
   'include optional=true "dms-ai-agent.kdl"'
+  'include optional=true "custom/apps.kdl"'
 )
+
+# Whisper for the chat panel's mic button; the same path the plugin's voice.py looks in.
+VOICE_VENV="$DATA_HOME/dms-ai-agent/whisper-venv"
 
 step() { printf '\n==> %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -113,6 +119,7 @@ setup_niri() {
   mkdir -p "$NIRI_DIR/custom" "$NIRI_DIR/scripts"
   install -m644 "$ROOT/niri/custom/binds.kdl" "$NIRI_DIR/custom/binds.kdl"
   install -m644 "$ROOT/niri/custom/privacy.kdl" "$NIRI_DIR/custom/privacy.kdl"
+  install -m644 "$ROOT/niri/custom/apps.kdl" "$NIRI_DIR/custom/apps.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m644 "$ROOT/niri/dms-ai-agent.kdl" "$NIRI_DIR/dms-ai-agent.kdl"
 
@@ -175,13 +182,60 @@ install_local_plugins() {
   done
 }
 
+# GNOME and KDE start Steam on the NVIDIA card because its desktop file asks for it
+# (PrefersNonDefaultGPU); niri ignores that, so native OpenGL games like Half-Life ran on the
+# Intel GPU. A user copy of the desktop file sets the offload variables itself.
+setup_steam_gpu() {
+  local system_file="/usr/share/applications/steam.desktop"
+  [[ -f "$system_file" ]] || return 0
+  command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 || return 0
+  step "Starting Steam on the NVIDIA card"
+  mkdir -p "$DATA_HOME/applications"
+  sed -E 's#^Exec=#Exec=env __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only #' \
+    "$system_file" > "$DATA_HOME/applications/steam.desktop"
+  note "installed $DATA_HOME/applications/steam.desktop; start Steam from the launcher to use it"
+}
+
+setup_voice() {
+  step "Setting up voice input (Whisper)"
+  local python="$VOICE_VENV/bin/python"
+  if [[ ! -x "$python" ]]; then
+    mkdir -p "$(dirname "$VOICE_VENV")"
+    python3 -m venv "$VOICE_VENV" || fail "python3 could not create $VOICE_VENV"
+  fi
+  "$python" -m pip install --quiet --upgrade faster-whisper || fail "could not install faster-whisper"
+  local model="small"
+  if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
+    # cuBLAS and cuDNN from pip; voice.py points the loader at them, no CUDA toolkit needed.
+    if "$python" -m pip install --quiet --upgrade nvidia-cublas-cu12 nvidia-cudnn-cu12; then
+      model="large-v3-turbo"
+    else
+      note "CUDA libraries failed to install; speech recognition will use the CPU"
+    fi
+  fi
+  note "downloading the Whisper model $model (one time)"
+  "$python" -c "from faster_whisper import download_model; download_model('$model')" >/dev/null \
+    || note "model download failed; it is retried the first time you use the mic"
+}
+
+setup_gaming() {
+  step "Applying the gaming tweaks"
+  sudo dnf install -y gamemode
+  sudo install -Dm644 "$ROOT/system/gamemode.ini" /etc/gamemode.ini
+  sudo install -Dm644 "$ROOT/system/coredump-off.conf" /etc/systemd/coredump.conf.d/99-disable.conf
+  # The file indexer took most of a core while games were running.
+  gsettings set org.freedesktop.Tracker3.Miner.Files throttle 15 2>/dev/null || true
+  note "add 'gamemoderun %command%' to a game's Steam launch options to use gamemode"
+}
+
 setup_shell() {
   step "Applying the Ink theme and bar settings"
   install -Dm644 "$ROOT/dms/themes/ink.json" "$DMS_DIR/themes/ink.json"
-  local wallpaper_args=()
-  [[ -z "$WALLPAPER" ]] || wallpaper_args=(--wallpaper "$WALLPAPER")
+  local settings_args=()
+  [[ -z "$WALLPAPER" ]] || settings_args=(--wallpaper "$WALLPAPER")
+  [[ "$WITH_VOICE" -eq 0 ]] || settings_args+=(--voice)
   python3 "$ROOT/lib/apply_settings.py" --config-dir "$DMS_DIR" --theme-file "$DMS_DIR/themes/ink.json" \
-    "${wallpaper_args[@]}"
+    "${settings_args[@]}"
 }
 
 finish() {
@@ -208,12 +262,15 @@ DONE
 }
 
 main() {
-  local skip_packages=0 wallpaper_source=""
+  local skip_packages=0 wallpaper_source="" gaming=0
+  WITH_VOICE=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-packages) skip_packages=1 ;;
+      --voice) WITH_VOICE=1 ;;
+      --gaming) gaming=1 ;;
       --wallpaper) wallpaper_source="${2:?--wallpaper needs a video file}"; shift ;;
-      -h|--help) sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) fail "unknown option: $1" ;;
     esac
     shift
@@ -237,6 +294,9 @@ main() {
     WALLPAPER="$(prepare_wallpaper "$wallpaper_source")"
     note "using $WALLPAPER"
   fi
+  [[ "$WITH_VOICE" -eq 0 ]] || setup_voice
+  setup_steam_gpu
+  [[ "$gaming" -eq 0 ]] || setup_gaming
   setup_shell
   finish
 }

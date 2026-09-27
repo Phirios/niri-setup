@@ -1,0 +1,32 @@
+// Where apps open. A rule applies when a window opens; windows already open stay where they are.
+// `niri msg windows` prints the app id of everything that is open.
+
+// Named workspaces always exist, even when empty. Both live on the laptop screen, so the
+// workspace numbers on the external monitor stay as they were.
+workspace "chat" {
+    open-on-output "eDP-1"
+}
+workspace "media" {
+    open-on-output "eDP-1"
+}
+
+window-rule {
+    match app-id=r#"^discord$"#
+    match app-id=r#"^Slack$"#
+    open-on-workspace "chat"
+}
+
+// Spotify sets its app id late on some versions; if it ignores this rule, that is why.
+window-rule {
+    match app-id=r#"^[Ss]potify$"#
+    open-on-workspace "media"
+}
+
+// Games: fullscreen on the external monitor, which is wired to the NVIDIA card.
+// Without that monitor niri falls back to the laptop screen.
+window-rule {
+    match app-id=r#"^steam_app_\d+$"#
+    match app-id=r#"^gamescope$"#
+    open-on-output "HDMI-A-1"
+    open-fullscreen true
+}

@@ -21,6 +21,14 @@ BAR_TRANSPARENCY = 0.7
 # Opaque enough that each bar item reads as its own pill over a busy wallpaper.
 WIDGET_TRANSPARENCY = 0.9
 POPUP_TRANSPARENCY = 0.78
+# Seconds. Only filled in when missing, so timeouts chosen in the settings survive a re-run.
+IDLE_DEFAULTS = {
+    "acLockTimeout": 900, "acMonitorTimeout": 1800,
+    "batteryLockTimeout": 300, "batteryMonitorTimeout": 600,
+    "lockBeforeSuspend": True,
+    # Shows the new profile when Super+B cycles it.
+    "osdPowerProfileEnabled": True,
+}
 
 AGENT_DEFAULTS = {"enabled": True, "claudeModel": "haiku", "pillLabel": "Claude", "backgroundOpacity": 80}
 LIVE_DEFAULTS = {"silenceNotifications": True, "keepAwake": True}
@@ -44,6 +52,7 @@ def with_plugin_widgets(widgets):
 
 
 def merge_shell_settings(current, theme_file):
+    current = {**IDLE_DEFAULTS, **current}
     look = {
         "currentThemeName": "custom",
         "currentThemeCategory": "custom",
@@ -71,12 +80,14 @@ def merge_shell_settings(current, theme_file):
     return {**current, **look, "barConfigs": [main_bar, *bars[1:]]}
 
 
-def merge_plugin_settings(current, wallpaper=None):
+def merge_plugin_settings(current, wallpaper=None, voice=False):
     chosen_video = {"videoPath": wallpaper} if wallpaper else {}
+    # Voice only works once the installer has set up Whisper, so only then is it switched on.
+    safety = {**AGENT_SAFETY, "voiceEnabled": voice}
     return {
         **current,
         "aiLimitCounter": {"provider": "claude", **current.get("aiLimitCounter", {}), "enabled": True},
-        "dmsAgent": {**AGENT_DEFAULTS, **current.get("dmsAgent", {}), "enabled": True, **AGENT_SAFETY},
+        "dmsAgent": {**AGENT_DEFAULTS, **current.get("dmsAgent", {}), "enabled": True, **safety},
         "liveMode": {**LIVE_DEFAULTS, **current.get("liveMode", {}), "enabled": True},
         "liveWallpaper": {
             **WALLPAPER_DEFAULTS, **current.get("liveWallpaper", {}), **chosen_video, "enabled": True,
@@ -111,6 +122,7 @@ def main(argv):
     parser.add_argument("--config-dir", required=True, type=Path, help="DankMaterialShell config directory")
     parser.add_argument("--theme-file", required=True, type=Path, help="installed location of ink.json")
     parser.add_argument("--wallpaper", type=Path, help="video for the live wallpaper")
+    parser.add_argument("--voice", action="store_true", help="switch on voice input in the chat panel")
     args = parser.parse_args(argv)
 
     if not args.theme_file.is_file():
@@ -122,7 +134,7 @@ def main(argv):
     plugins_path = args.config_dir / "plugin_settings.json"
     write_json(settings_path, merge_shell_settings(read_json(settings_path), str(args.theme_file)), stamp)
     wallpaper = str(args.wallpaper) if args.wallpaper else None
-    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path), wallpaper), stamp)
+    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path), wallpaper, args.voice), stamp)
 
 
 if __name__ == "__main__":

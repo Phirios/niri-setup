@@ -61,6 +61,22 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertEqual(merged["cornerRadius"], 8)
         self.assertEqual(merged["barConfigs"][1], {"id": "second", "rightWidgets": ["clock"]})
 
+    def test_fresh_install_gets_the_idle_and_lock_timeouts(self):
+        merged = merge_shell_settings({}, THEME)
+
+        self.assertEqual(merged["acLockTimeout"], 900)
+        self.assertEqual(merged["acMonitorTimeout"], 1800)
+        self.assertEqual(merged["batteryLockTimeout"], 300)
+        self.assertEqual(merged["batteryMonitorTimeout"], 600)
+        self.assertTrue(merged["lockBeforeSuspend"])
+        self.assertTrue(merged["osdPowerProfileEnabled"])
+
+    def test_idle_timeouts_already_chosen_are_kept(self):
+        merged = merge_shell_settings({"acLockTimeout": 60, "lockBeforeSuspend": False}, THEME)
+
+        self.assertEqual(merged["acLockTimeout"], 60)
+        self.assertFalse(merged["lockBeforeSuspend"])
+
     def test_input_is_not_modified(self):
         current = {"barConfigs": [{"id": "default", "rightWidgets": ["clipboard"]}]}
 
@@ -105,6 +121,17 @@ class PluginSettingsTest(unittest.TestCase):
         self.assertEqual(merged["dmsAgent"]["claudeModel"], "sonnet")
         self.assertFalse(merged["dmsAgent"]["autoUpdate"])
         self.assertEqual(merged["somethingElse"], {"enabled": False})
+
+    def test_voice_stays_off_unless_the_installer_set_it_up(self):
+        merged = merge_plugin_settings({"dmsAgent": {"voiceEnabled": True}})
+
+        self.assertFalse(merged["dmsAgent"]["voiceEnabled"])
+
+    def test_voice_is_switched_on_when_the_installer_set_it_up(self):
+        merged = merge_plugin_settings({}, voice=True)
+
+        self.assertTrue(merged["dmsAgent"]["voiceEnabled"])
+        self.assertFalse(merged["dmsAgent"]["autoUpdate"])
 
 
 if __name__ == "__main__":

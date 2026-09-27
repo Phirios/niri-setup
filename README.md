@@ -21,6 +21,13 @@ Then log out, pick **niri** in the session menu of the login screen, and log in.
 Requires Fedora 43 or newer. The script asks for your password once, for `dnf`.
 Use `./install.sh --skip-packages` when niri and DMS are already installed.
 
+Two parts are opt-in:
+
+| Option | Adds |
+|--------|------|
+| `--voice` | Voice input for the chat panel: a local Whisper model, 1 to 3 GB, see below |
+| `--gaming` | The tweaks in `system/`: gamemode, no core dumps, a throttled file indexer |
+
 ## What it does
 
 | Step | Result |
@@ -32,6 +39,9 @@ Use `./install.sh --skip-packages` when niri and DMS are already installed.
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
 | Live wallpaper | A video wallpaper through mpvpaper, see below |
 | AI chat panel | [dms-ai-agent](https://github.com/Cha1000000/dms-ai-agent) at a pinned commit, with the patches in `patches/` |
+| App placement | Discord and Slack on a `chat` workspace, Spotify on `media`, games fullscreen on the external monitor |
+| Idle and lock | Lock after 15 min on AC and 5 min on battery, screen off after 30 and 10, lock before suspend |
+| Steam on NVIDIA | On a machine with an NVIDIA card, Steam and its games start on it |
 
 Anything that already exists is copied to a `.bak-<timestamp>` sibling before it is replaced.
 
@@ -62,7 +72,7 @@ gives both back when the last share ends. It only gives back what it switched on
 you had Do Not Disturb on already, it stays on. Both can be switched off in the plugin settings.
 
 `~/.config/niri/custom/privacy.kdl` keeps a few things out of screen shares and recordings:
-the AI chat, notifications, clipboard history, Wi-Fi password dialogs, password prompts and
+notifications, clipboard history, Wi-Fi password dialogs, password prompts and
 common password managers. You still see them; viewers get a black rectangle the size of the
 whole surface. Add a `match app-id=...` line for any other app you want hidden.
 
@@ -84,6 +94,35 @@ Each monitor plays only while its workspace is empty or the overview is open, wh
 wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The
 still wallpaper stays underneath.
 
+## Apps and workspaces
+
+`~/.config/niri/custom/apps.kdl` decides where windows open. Two named workspaces, `chat` and
+`media`, live on the laptop screen (`eDP-1`); games open fullscreen on `HDMI-A-1`, the port wired
+to the NVIDIA card on the machine this was written on. Run `niri msg outputs` to see your own
+names. When a named output is missing, niri uses another one, so nothing breaks.
+
+## Steam and the NVIDIA card
+
+GNOME and KDE start Steam on the NVIDIA card because Steam's desktop file asks for it. niri
+ignores that request, so native OpenGL games such as Half-Life ran on the Intel GPU, hot and
+slow. On a machine with a working `nvidia-smi` the installer writes
+`~/.local/share/applications/steam.desktop`, a copy that sets the NVIDIA offload variables.
+Start Steam from the launcher to use it; `steam` typed in a terminal skips it. If a Steam update
+changes its own desktop file, run the installer again.
+
+## Gaming tweaks
+
+`--gaming` installs gamemode with `system/gamemode.ini` (performance governor while a game
+runs), turns off core dumps (`system/coredump-off.conf`; crashing apps had piled up gigabytes of
+them and kept a core busy writing more) and throttles the GNOME file indexer. Add
+`gamemoderun %command%` to a game's Steam launch options to use gamemode.
+
+One more fix is specific to one laptop and so is not applied: if a Proton game drops a frame
+once a second, reading the battery may be slow on that machine. Check with
+`time cat /sys/class/power_supply/BAT*/status`; above 50 ms, add the kernel argument
+`battery.cache_time=60000` with `sudo grubby --update-kernel=ALL --args=...`.
+A file in `/etc/modprobe.d` does nothing, because `battery` is built into the Fedora kernel.
+
 ## The chat panel and what it may do
 
 The panel runs your `claude` CLI, so it uses your own Claude subscription. Install
@@ -101,9 +140,16 @@ The patches replace that with an allowlist. Whatever is not on it is refused.
 | System info, web search | |
 | Reading files in Downloads, Documents, Pictures, Desktop, Videos, Music | |
 
-Two more things are off until you switch them on in the plugin settings: **auto-update**,
-because an update is new code that the shell then runs, and **voice input**, because upstream
-opens the microphone every time the panel opens.
+The chat itself is not hidden from screen shares, so viewers see what you ask and what comes
+back.
+
+**Auto-update** stays off, because an update is new code that the shell then runs.
+
+**Voice input** is off unless you install with `--voice`. That sets up
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) in
+`~/.local/share/dms-ai-agent/whisper-venv` and downloads a model: `large-v3-turbo` on an
+NVIDIA card, `small` on the CPU. Speech is turned into text on your machine. Running the
+installer again without `--voice` switches voice input off again.
 
 ## Undo
 
