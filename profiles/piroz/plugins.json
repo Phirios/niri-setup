@@ -1,0 +1,11 @@
+{
+  "liveWallpaper": {
+    "videoPath": "~/Videos/Wallpapers/luminous-flora-magical-forest-moewalls-com.mp4",
+    "pauseWhenHidden": false,
+    "stopOnBattery": false
+  },
+  "dmsAgent": {
+    "provider": "codex",
+    "voiceDevice": "easyeffects_source"
+  }
+}

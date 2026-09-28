@@ -5,7 +5,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from apply_settings import merge_plugin_settings, merge_shell_settings  # noqa: E402
+from apply_settings import (  # noqa: E402
+    apply_profile_plugins,
+    apply_profile_shell,
+    merge_plugin_settings,
+    merge_shell_settings,
+)
 
 THEME = "/home/someone/.config/DankMaterialShell/themes/ink.json"
 
@@ -20,7 +25,8 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertFalse(merged["modalDarkenBackground"])
         self.assertIn("aiLimitCounter", merged["dankBarRightWidgets"])
         self.assertIn("dmsAgent", merged["dankBarRightWidgets"])
-        self.assertEqual(merged["dankBarRightWidgets"][0], "liveMode")
+        self.assertNotIn("liveMode", merged["dankBarRightWidgets"])
+        self.assertEqual(merged["dankBarCenterWidgets"], ["music", "clock", "weather", "liveMode"])
         self.assertEqual(merged["dankBarTransparency"], 0.7)
         self.assertEqual(merged["dankBarWidgetTransparency"], 0.9)
         self.assertEqual(merged["controlCenterWidgets"][-1], {
@@ -33,8 +39,7 @@ class ShellSettingsTest(unittest.TestCase):
 
         bar = merge_shell_settings(current, THEME)["barConfigs"][0]
 
-        self.assertEqual(
-            bar["rightWidgets"], ["liveMode", "systemTray", "clipboard", "aiLimitCounter", "dmsAgent", "battery"])
+        self.assertEqual(bar["rightWidgets"], ["systemTray", "clipboard", "aiLimitCounter", "dmsAgent", "battery"])
         self.assertEqual(bar["transparency"], 0.7)
         self.assertEqual(bar["widgetTransparency"], 0.9)
 
@@ -43,7 +48,7 @@ class ShellSettingsTest(unittest.TestCase):
 
         bar = merge_shell_settings(current, THEME)["barConfigs"][0]
 
-        self.assertEqual(bar["rightWidgets"], ["liveMode", "battery", "aiLimitCounter", "dmsAgent"])
+        self.assertEqual(bar["rightWidgets"], ["battery", "aiLimitCounter", "dmsAgent"])
 
     def test_running_twice_does_not_duplicate_widgets(self):
         once = merge_shell_settings({"barConfigs": [{"id": "default", "rightWidgets": ["clipboard"]}]}, THEME)
@@ -51,7 +56,7 @@ class ShellSettingsTest(unittest.TestCase):
         twice = merge_shell_settings(once, THEME)
 
         self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("dmsAgent"), 1)
-        self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("liveMode"), 1)
+        self.assertEqual(twice["barConfigs"][0]["centerWidgets"].count("liveMode"), 1)
         self.assertEqual(
             sum(widget.get("id") == "builtin_tailscale" for widget in twice["controlCenterWidgets"]), 1)
         self.assertEqual(twice, once)
@@ -70,6 +75,16 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertEqual(merged["controlCenterWidgets"][-1], {
             "id": "builtin_tailscale", "enabled": True, "width": 100,
         })
+
+    def test_live_pill_moves_from_the_right_to_the_center(self):
+        current = {"barConfigs": [{
+            "id": "default", "centerWidgets": ["clock"], "rightWidgets": ["liveMode", "clipboard"],
+        }]}
+
+        bar = merge_shell_settings(current, THEME)["barConfigs"][0]
+
+        self.assertEqual(bar["centerWidgets"], ["clock", "liveMode"])
+        self.assertEqual(bar["rightWidgets"], ["clipboard", "aiLimitCounter", "dmsAgent"])
 
     def test_other_bars_and_settings_are_kept(self):
         current = {
@@ -153,6 +168,52 @@ class PluginSettingsTest(unittest.TestCase):
 
         self.assertTrue(merged["dmsAgent"]["voiceEnabled"])
         self.assertFalse(merged["dmsAgent"]["autoUpdate"])
+
+
+
+class ProfileTest(unittest.TestCase):
+    BASE = {"cornerRadius": 16, "barConfigs": [{"id": "default", "transparency": 0.7, "rightWidgets": ["clock"]}]}
+
+    def test_an_empty_profile_changes_nothing(self):
+        self.assertEqual(apply_profile_shell(self.BASE, {}), self.BASE)
+        self.assertEqual(apply_profile_plugins({"liveMode": {"enabled": True}}, {}), {"liveMode": {"enabled": True}})
+
+    def test_profile_values_win_over_the_shared_ones(self):
+        merged = apply_profile_shell(self.BASE, {"cornerRadius": 8, "acLockTimeout": 600})
+
+        self.assertEqual(merged["cornerRadius"], 8)
+        self.assertEqual(merged["acLockTimeout"], 600)
+
+    def test_bar_values_go_into_the_main_bar_and_keep_the_rest_of_it(self):
+        merged = apply_profile_shell(self.BASE, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(merged["barConfigs"][0]["transparency"], 1.0)
+        self.assertEqual(merged["barConfigs"][0]["rightWidgets"], ["clock"])
+        self.assertNotIn("bar", merged)
+
+    def test_bar_values_before_any_bar_exists_use_the_migration_keys(self):
+        merged = apply_profile_shell({"dankBarTransparency": 0.7}, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(merged["dankBarTransparency"], 1.0)
+        self.assertNotIn("barConfigs", merged)
+
+    def test_plugin_values_are_merged_per_plugin(self):
+        current = {"liveWallpaper": {"enabled": True, "videoPath": "", "stopOnBattery": True}}
+
+        merged = apply_profile_plugins(current, {"liveWallpaper": {"videoPath": "~/v.webm"}})
+
+        self.assertEqual(merged["liveWallpaper"], {"enabled": True, "videoPath": "~/v.webm", "stopOnBattery": True})
+
+    def test_comment_keys_in_profile_files_are_ignored(self):
+        merged = apply_profile_shell(self.BASE, {"_comment": "notes for people", "bar": {"_comment": "x"}})
+
+        self.assertEqual(merged, self.BASE)
+
+    def test_inputs_are_not_modified(self):
+        base = {"barConfigs": [{"id": "default", "transparency": 0.7}]}
+        apply_profile_shell(base, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(base, {"barConfigs": [{"id": "default", "transparency": 0.7}]})
 
 
 if __name__ == "__main__":

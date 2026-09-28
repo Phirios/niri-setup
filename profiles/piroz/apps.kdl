@@ -1,0 +1,10 @@
+// Where Piroz's apps open. Output names depend on the machine: run `niri msg outputs`.
+//
+// workspace "chat" {
+//     open-on-output "eDP-1"
+// }
+//
+// window-rule {
+//     match app-id=r#"^discord$"#
+//     open-on-workspace "chat"
+// }

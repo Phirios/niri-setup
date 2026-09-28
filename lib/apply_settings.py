@@ -12,8 +12,10 @@ import time
 from pathlib import Path
 
 PLUGIN_WIDGETS = ("aiLimitCounter", "dmsAgent")
-# Only visible while the screen is shared; first, so it never shifts the widgets next to it.
-LEADING_WIDGET = "liveMode"
+# Only visible while the screen is shared. It sits at the end of the centre section, which DMS
+# re-centres as it grows; at the start of the right section it ran into the weather pill.
+LIVE_WIDGET = "liveMode"
+DEFAULT_CENTER_WIDGETS = ("music", "clock", "weather")
 DEFAULT_RIGHT_WIDGETS = (
     "systemTray", "clipboard", "cpuUsage", "memUsage", "notificationButton", "battery", "controlCenterButton",
 )
@@ -51,10 +53,13 @@ WALLPAPER_DEFAULTS = {
 AGENT_SAFETY = {"autoUpdate": False, "voiceEnabled": False}
 
 
+def with_live_widget(widgets):
+    return widgets if LIVE_WIDGET in widgets else [*widgets, LIVE_WIDGET]
+
+
 def with_plugin_widgets(widgets):
     """Put the plugin widgets right after the clipboard, or at the end when there is none."""
-    if LEADING_WIDGET not in widgets:
-        widgets = [LEADING_WIDGET, *widgets]
+    widgets = [name for name in widgets if name != LIVE_WIDGET]
     missing = [name for name in PLUGIN_WIDGETS if name not in widgets]
     if "clipboard" not in widgets:
         return [*widgets, *missing]
@@ -90,6 +95,7 @@ def merge_shell_settings(current, theme_file):
         return {
             **current,
             **look,
+            "dankBarCenterWidgets": with_live_widget(list(current.get("dankBarCenterWidgets", DEFAULT_CENTER_WIDGETS))),
             "dankBarRightWidgets": with_plugin_widgets(list(current.get("dankBarRightWidgets", DEFAULT_RIGHT_WIDGETS))),
             "dankBarTransparency": BAR_TRANSPARENCY,
             "dankBarWidgetTransparency": WIDGET_TRANSPARENCY,
@@ -97,6 +103,7 @@ def merge_shell_settings(current, theme_file):
 
     main_bar = {
         **bars[0],
+        "centerWidgets": with_live_widget(list(bars[0].get("centerWidgets", DEFAULT_CENTER_WIDGETS))),
         "rightWidgets": with_plugin_widgets(list(bars[0].get("rightWidgets", []))),
         "transparency": BAR_TRANSPARENCY,
         "widgetTransparency": WIDGET_TRANSPARENCY,
@@ -116,6 +123,34 @@ def merge_plugin_settings(current, wallpaper=None, voice=False):
         "liveWallpaper": {
             **WALLPAPER_DEFAULTS, **current.get("liveWallpaper", {}), **chosen_video, "enabled": True,
         },
+    }
+
+
+def without_comments(values):
+    """Profile files may carry "_comment" keys for the people editing them."""
+    return {key: value for key, value in values.items() if not key.startswith("_")}
+
+
+def apply_profile_shell(current, profile):
+    """A profile's shell.json: top-level DMS settings, plus "bar" for the main bar's settings."""
+    profile = without_comments(profile)
+    bar = without_comments(profile.pop("bar", {}))
+    merged = {**current, **profile}
+    bars = merged.get("barConfigs")
+    if not bar:
+        return merged
+    if not bars:
+        # No bar yet: DMS builds the first one from dankBar* keys, e.g. transparency -> dankBarTransparency.
+        return {**merged, **{"dankBar" + key[0].upper() + key[1:]: value for key, value in bar.items()}}
+    return {**merged, "barConfigs": [{**bars[0], **bar}, *bars[1:]]}
+
+
+def apply_profile_plugins(current, profile):
+    """A profile's plugins.json: settings per plugin id, merged into what is there."""
+    profile = without_comments(profile)
+    return {
+        **current,
+        **{plugin: {**current.get(plugin, {}), **without_comments(values)} for plugin, values in profile.items()},
     }
 
 
@@ -147,6 +182,7 @@ def main(argv):
     parser.add_argument("--theme-file", required=True, type=Path, help="installed location of ink.json")
     parser.add_argument("--wallpaper", type=Path, help="video for the live wallpaper")
     parser.add_argument("--voice", action="store_true", help="switch on voice input in the chat panel")
+    parser.add_argument("--profile-dir", type=Path, help="personal profile with shell.json and plugins.json")
     args = parser.parse_args(argv)
 
     if not args.theme_file.is_file():
@@ -156,9 +192,18 @@ def main(argv):
 
     settings_path = args.config_dir / "settings.json"
     plugins_path = args.config_dir / "plugin_settings.json"
-    write_json(settings_path, merge_shell_settings(read_json(settings_path), str(args.theme_file)), stamp)
+    profile_shell = read_json(args.profile_dir / "shell.json") if args.profile_dir else {}
+    profile_plugins = read_json(args.profile_dir / "plugins.json") if args.profile_dir else {}
+
+    shell = merge_shell_settings(read_json(settings_path), str(args.theme_file))
+    write_json(settings_path, apply_profile_shell(shell, profile_shell), stamp)
     wallpaper = str(args.wallpaper) if args.wallpaper else None
-    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path), wallpaper, args.voice), stamp)
+    plugins = merge_plugin_settings(read_json(plugins_path), wallpaper, args.voice)
+    plugins = apply_profile_plugins(plugins, profile_plugins)
+    if wallpaper:
+        # A video given on the command line beats the one in the profile.
+        plugins = apply_profile_plugins(plugins, {"liveWallpaper": {"videoPath": wallpaper}})
+    write_json(plugins_path, plugins, stamp)
 
 
 if __name__ == "__main__":
