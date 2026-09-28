@@ -72,7 +72,7 @@ gives both back when the last share ends. It only gives back what it switched on
 you had Do Not Disturb on already, it stays on. Both can be switched off in the plugin settings.
 
 `~/.config/niri/custom/privacy-rules.kdl` keeps a few things out of screen shares and recordings:
-notifications, clipboard history, Wi-Fi password dialogs, password prompts and
+the AI chat, notifications, clipboard history, Wi-Fi password dialogs, password prompts and
 common password managers. You still see them; viewers get a black rectangle the size of the
 whole surface. Add a `match app-id=...` line for any other app you want hidden.
 

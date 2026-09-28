@@ -3,6 +3,7 @@
 
 // Shell surfaces that can show private text.
 layer-rule {
+    match namespace="^dms:agent$"
     match namespace="^dms:notification"
     match namespace="^dms:clipboard"
     match namespace="^dms:wifi-"
