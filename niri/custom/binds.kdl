@@ -2,6 +2,7 @@
 binds {
     Mod+D repeat=false hotkey-overlay-title="Show Desktop" { spawn "sh" "-c" "exec ~/.config/niri/scripts/show-desktop.sh"; }
     Mod+B repeat=false hotkey-overlay-title="Cycle Power Profile" { spawn "dms" "ipc" "call" "powerprofile" "cycle"; }
+    Mod+G repeat=false hotkey-overlay-title="Arrange Windows in a Grid" { spawn "sh" "-c" "exec ~/.config/niri/scripts/grid.sh"; }
 
     // For keyboards without Page Up/Down. Up and down move between windows stacked in a column,
     // and past the top or bottom window on to the next workspace.

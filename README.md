@@ -57,6 +57,8 @@ Anything that already exists is copied to a `.bak-<timestamp>` sibling before it
 | `Super+D` | Show desktop, press again to go back |
 | `Super+A` | AI chat |
 | `Super+B` | Cycle power profile |
+| `Super+G` | Arrange the workspace's windows in a grid: two per column, half-width columns |
+| `Super+Up` / `Super+Down` | Window above or below, then the next workspace (no Page Up/Down needed) |
 | `Super+Comma` | DMS settings |
 | `Super+Shift+/` | All shortcuts |
 | `Super+Shift+E` | Leave niri |
