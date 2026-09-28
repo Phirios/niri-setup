@@ -23,6 +23,9 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertEqual(merged["dankBarRightWidgets"][0], "liveMode")
         self.assertEqual(merged["dankBarTransparency"], 0.7)
         self.assertEqual(merged["dankBarWidgetTransparency"], 0.9)
+        self.assertEqual(merged["controlCenterWidgets"][-1], {
+            "id": "builtin_tailscale", "enabled": True, "width": 100,
+        })
         self.assertNotIn("barConfigs", merged)
 
     def test_existing_bar_gets_the_widgets_next_to_the_clipboard(self):
@@ -49,7 +52,24 @@ class ShellSettingsTest(unittest.TestCase):
 
         self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("dmsAgent"), 1)
         self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("liveMode"), 1)
+        self.assertEqual(
+            sum(widget.get("id") == "builtin_tailscale" for widget in twice["controlCenterWidgets"]), 1)
         self.assertEqual(twice, once)
+
+    def test_existing_control_center_layout_is_kept_and_gets_tailscale(self):
+        current = {
+            "controlCenterWidgets": [
+                {"id": "wifi", "enabled": True, "width": 25},
+                {"id": "darkMode", "enabled": False, "width": 50},
+            ]
+        }
+
+        merged = merge_shell_settings(current, THEME)
+
+        self.assertEqual(merged["controlCenterWidgets"][:-1], current["controlCenterWidgets"])
+        self.assertEqual(merged["controlCenterWidgets"][-1], {
+            "id": "builtin_tailscale", "enabled": True, "width": 100,
+        })
 
     def test_other_bars_and_settings_are_kept(self):
         current = {

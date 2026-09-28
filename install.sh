@@ -126,6 +126,8 @@ setup_niri() {
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m755 "$ROOT/niri/scripts/dms-run.sh" "$NIRI_DIR/scripts/dms-run.sh"
   install -m644 "$ROOT/niri/scripts/dms-wallpaper-picker.patch" "$NIRI_DIR/scripts/dms-wallpaper-picker.patch"
+  install -m644 "$ROOT/niri/scripts/dms-tailscale-control-center.patch" \
+    "$NIRI_DIR/scripts/dms-tailscale-control-center.patch"
   install -Dm755 "$ROOT/niri/scripts/dms-live-wallpaper-thumbnails" \
     "$HOME/.local/bin/dms-live-wallpaper-thumbnails"
   install -m755 "$ROOT/niri/scripts/grid.py" "$NIRI_DIR/scripts/grid.py"

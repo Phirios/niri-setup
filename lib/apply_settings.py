@@ -17,6 +17,17 @@ LEADING_WIDGET = "liveMode"
 DEFAULT_RIGHT_WIDGETS = (
     "systemTray", "clipboard", "cpuUsage", "memUsage", "notificationButton", "battery", "controlCenterButton",
 )
+DEFAULT_CONTROL_CENTER_WIDGETS = (
+    {"id": "volumeSlider", "enabled": True, "width": 50},
+    {"id": "brightnessSlider", "enabled": True, "width": 50},
+    {"id": "wifi", "enabled": True, "width": 50},
+    {"id": "bluetooth", "enabled": True, "width": 50},
+    {"id": "audioOutput", "enabled": True, "width": 50},
+    {"id": "audioInput", "enabled": True, "width": 50},
+    {"id": "nightMode", "enabled": True, "width": 50},
+    {"id": "darkMode", "enabled": True, "width": 50},
+)
+TAILSCALE_WIDGET = {"id": "builtin_tailscale", "enabled": True, "width": 100}
 BAR_TRANSPARENCY = 0.7
 # Opaque enough that each bar item reads as its own pill over a busy wallpaper.
 WIDGET_TRANSPARENCY = 0.9
@@ -51,6 +62,13 @@ def with_plugin_widgets(widgets):
     return [*widgets[:split], *missing, *widgets[split:]]
 
 
+def with_tailscale_widget(widgets):
+    """Keep the existing Control Center layout and add one full-width Tailscale section."""
+    if any(isinstance(widget, dict) and widget.get("id") == TAILSCALE_WIDGET["id"] for widget in widgets):
+        return widgets
+    return [*widgets, dict(TAILSCALE_WIDGET)]
+
+
 def merge_shell_settings(current, theme_file):
     current = {**IDLE_DEFAULTS, **current}
     look = {
@@ -62,6 +80,9 @@ def merge_shell_settings(current, theme_file):
         # screen-share rules can only black out whole.
         "modalDarkenBackground": False,
         "popupTransparency": POPUP_TRANSPARENCY,
+        "controlCenterWidgets": with_tailscale_widget(
+            list(current.get("controlCenterWidgets", DEFAULT_CONTROL_CENTER_WIDGETS))
+        ),
     }
     bars = current.get("barConfigs")
     if not bars:

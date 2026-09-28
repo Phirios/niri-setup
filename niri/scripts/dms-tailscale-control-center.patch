@@ -1,0 +1,92 @@
+--- a/Services/TailscaleService.qml
++++ b/Services/TailscaleService.qml
+@@ -235,0 +236,2 @@
++            if (p.owner && p.owner.toLowerCase().includes(q))
++                return true;
+--- a/Modules/ControlCenter/utils/detailHeight.js
++++ b/Modules/ControlCenter/utils/detailHeight.js
+@@ -4,2 +4,3 @@
+-    if (section === "wifi" || section === "bluetooth"
+-            || section === "builtin_vpn" || section === "builtin_tailscale")
++    if (section === "builtin_tailscale")
++        return Math.min(520, maxHeight);
++    if (section === "wifi" || section === "bluetooth" || section === "builtin_vpn")
+--- a/Modules/ControlCenter/BuiltinPlugins/TailscaleWidget.qml
++++ b/Modules/ControlCenter/BuiltinPlugins/TailscaleWidget.qml
+@@ -46,0 +47 @@
++            property string ownerFilter: ""
+@@ -48,0 +50,17 @@
++            readonly property string allOwnersLabel: I18n.tr("All users", "Tailscale owner filter: show devices from every user")
++            readonly property var ownerOptions: {
++                const owners = [];
++                for (const peer of TailscaleService.allPeersList) {
++                    const owner = (peer.owner || "").trim();
++                    if (owner.length > 0 && !owners.includes(owner))
++                        owners.push(owner);
++                }
++                owners.sort((a, b) => a.localeCompare(b));
++                return [allOwnersLabel].concat(owners);
++            }
++
++            onOwnerOptionsChanged: {
++                if (ownerFilter.length > 0 && !ownerOptions.includes(ownerFilter))
++                    ownerFilter = "";
++            }
++
+@@ -224 +242 @@
+-                        // Search bar + refresh button
++                        // Search bar + owner filter + refresh button
+@@ -231 +249 @@
+-                                placeholderText: I18n.tr("Search devices...", "Tailscale device search placeholder")
++                                placeholderText: I18n.tr("Search devices or users...", "Tailscale device and owner search placeholder")
+@@ -237,0 +256,12 @@
++                            DankDropdown {
++                                Layout.preferredWidth: 140
++                                compactMode: true
++                                dropdownWidth: 140
++                                popupWidth: 200
++                                currentValue: detailRoot.ownerFilter.length > 0 ? detailRoot.ownerFilter : detailRoot.allOwnersLabel
++                                options: detailRoot.ownerOptions
++                                onValueChanged: value => {
++                                    detailRoot.ownerFilter = value === detailRoot.allOwnersLabel ? "" : value;
++                                }
++                            }
++
+@@ -303,0 +334,2 @@
++                                if (detailRoot.ownerFilter.length > 0)
++                                    base = base.filter(peer => (peer.owner || "") === detailRoot.ownerFilter);
+@@ -327 +359 @@
+-                                        text: detailRoot.searchQuery.length > 0 ? I18n.tr("No matching devices", "No Tailscale devices match search") : I18n.tr("No peers found", "No Tailscale peers found")
++                                        text: detailRoot.searchQuery.length > 0 || detailRoot.ownerFilter.length > 0 ? I18n.tr("No matching devices", "No Tailscale devices match active filters") : I18n.tr("No peers found", "No Tailscale peers found")
+@@ -411,0 +444,20 @@
++                                        RowLayout {
++                                            width: parent.width
++                                            spacing: Theme.spacingXS
++                                            visible: (modelData.owner || "").length > 0
++
++                                            DankIcon {
++                                                name: "person"
++                                                size: Theme.fontSizeSmall
++                                                color: Theme.surfaceVariantText
++                                            }
++
++                                            StyledText {
++                                                text: I18n.tr("Owner: %1", "Tailscale device owner").arg(modelData.owner || "")
++                                                font.pixelSize: Theme.fontSizeSmall
++                                                color: Theme.surfaceVariantText
++                                                Layout.fillWidth: true
++                                                elide: Text.ElideRight
++                                            }
++                                        }
++
+@@ -430 +482 @@
+-                                        // Expanded: DNS name + copy, tags, owner
++                                        // Expanded: DNS name + copy and tags
+@@ -462,7 +513,0 @@
+-                                                font.pixelSize: Theme.fontSizeSmall
+-                                                color: Theme.surfaceVariantText
+-                                            }
+-
+-                                            StyledText {
+-                                                visible: (modelData.owner || "").length > 0
+-                                                text: I18n.tr("Owner: %1", "Tailscale device owner").arg(modelData.owner || "")

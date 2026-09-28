@@ -38,6 +38,7 @@ Two parts are opt-in:
 | AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
 | Live wallpaper | A video wallpaper through mpvpaper, see below |
+| Tailscale | A full-width Control Center section with a taller device list, device owners and owner filtering |
 | AI chat panel | [dms-ai-agent](https://github.com/Cha1000000/dms-ai-agent) at a pinned commit, with the patches in `patches/` |
 | App placement | Discord and Slack on a `chat` workspace, Spotify on `media`, games fullscreen on the external monitor |
 | Idle and lock | Lock after 15 min on AC and 5 min on battery, screen off after 30 and 10, lock before suspend |
