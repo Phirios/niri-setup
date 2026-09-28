@@ -76,7 +76,12 @@ the AI chat, notifications, the notification center, clipboard history, Wi-Fi pa
 password prompts and common password managers. You still see them; viewers get a black
 rectangle the size of the panel. For that, the installer turns off the dimmed backdrop behind
 DMS dialogs, because with it DMS draws a dialog as one full-screen surface and hiding it would
-black out the whole screen. Add a `match app-id=...` line for any other app you want hidden.
+black out the whole screen.
+
+The notification center has the same problem for a different reason: DMS draws it as a strip
+down to the bottom of the screen. `niri/scripts/dms-run.sh` starts DMS from a copy of its UI
+with that one line changed, so only the panel is blacked out. The copy is refreshed after every
+DMS update, and if the line ever changes upstream the script starts the stock UI instead. Add a `match app-id=...` line for any other app you want hidden.
 
 Click the `LIVE` pill during a share for switches: hide private surfaces, silence
 notifications, keep the screen awake. The privacy switch stays as you leave it; the other two
