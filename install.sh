@@ -172,12 +172,14 @@ install_agent() {
     git -C "$AGENT_DIR" apply --index "$patch" || fail "could not apply $(basename "$patch")"
   done
   git -C "$AGENT_DIR" -c user.name="niri-setup" -c user.email="niri-setup@localhost" \
-    commit --quiet --message "Apply niri-setup patches: allowlist, no auto-update, accent rim, AMD voice"
+    commit --quiet --message "Apply niri-setup patches: safety, AMD voice, Codex, adaptive UI"
   chmod +x "$AGENT_DIR"/*.sh
   note "installed at $AGENT_DIR (branch hardened)"
 
   command -v claude >/dev/null \
     || note "claude CLI not found: install Claude Code and log in before using the chat panel"
+  command -v codex >/dev/null \
+    || note "codex CLI not found: install Codex and log in before choosing it in the chat panel"
 }
 
 install_local_plugins() {

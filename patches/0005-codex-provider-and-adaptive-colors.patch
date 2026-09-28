@@ -1,0 +1,558 @@
+From be2acaaf5319811c572719e6b60b08472bfe1861 Mon Sep 17 00:00:00 2001
+From: Phirios <kirazh27@gmail.com>
+Date: Mon, 28 Sep 2026 03:45:38 +0300
+Subject: [PATCH] Add Codex provider with adaptive palette
+
+---
+ AgentService.qml     | 119 +++++++++++++++++++++++++++++++++++++++++--
+ DmsAgent.qml         |  11 +++-
+ DmsAgentChat.qml     |  97 ++++++++++++++++++++++++-----------
+ DmsAgentSettings.qml |  21 +++++++-
+ plugin.json          |   4 +-
+ 5 files changed, 214 insertions(+), 38 deletions(-)
+
+diff --git a/AgentService.qml b/AgentService.qml
+index 9021875..3937b0a 100644
+--- a/AgentService.qml
++++ b/AgentService.qml
+@@ -24,7 +24,10 @@ Singleton {
+         return I18n.t(uiLanguage, key, args);
+     }
+ 
++    property string provider: "claude"
+     property string claudeModel: "haiku"
++    // Empty follows the Codex CLI default selected for the signed-in account.
++    property string codexModel: ""
+     property bool extendedThinking: false
+     property string systemPrompt: "You are a concise desktop assistant on Linux with niri (Wayland compositor) and DankMaterialShell. " +
+         "You work from an allowlist: niri window and workspace commands, dms ipc calls, gtk-launch, xdg-open, " +
+@@ -564,6 +567,13 @@ Singleton {
+     readonly property string historyScript: decodeURIComponent(String(Qt.resolvedUrl("history.py")).replace(/^file:\/\//, ""))
+ 
+     function loadHistory() {
++        // The current panel history reader understands Claude Code transcripts.
++        // Codex still keeps context in the active session; its archived sessions
++        // simply stay out of this dropdown for now.
++        if (provider !== "claude") {
++            history = [];
++            return;
++        }
+         runQuietExit(cdWorkDir + "python3 " + shellQuote(historyScript) + " list", function(output) {
+             try { history = JSON.parse(String(output).trim()); } catch(e) { history = []; }
+         });
+@@ -572,6 +582,7 @@ Singleton {
+     // Deleting a session removes its transcript from disk — there is no other
+     // copy. Confirmation happens in the UI before either of these is called.
+     function deleteSession(historySessionId) {
++        if (provider !== "claude") return;
+         runQuietExit(cdWorkDir + "python3 " + shellQuote(historyScript) + " delete " + shellQuote(historySessionId), function() {
+             // Wiping the session being displayed leaves the chat pointing at a
+             // transcript that no longer exists, so it is reset to a fresh one.
+@@ -581,6 +592,7 @@ Singleton {
+     }
+ 
+     function deleteAllSessions() {
++        if (provider !== "claude") return;
+         runQuietExit(cdWorkDir + "python3 " + shellQuote(historyScript) + " delete-all", function() {
+             clearMessages();
+             loadHistory();
+@@ -588,7 +600,7 @@ Singleton {
+     }
+ 
+     function resumeSession(historySessionId) {
+-        if (busy) return;
++        if (busy || provider !== "claude") return;
+         sessionId = historySessionId;
+         messages = [];
+         busy = true;
+@@ -639,13 +651,26 @@ Singleton {
+ 
+         var intent = detectIntent(text);
+         if (intent) {
+-            prefetchContext(intent, function(ctx) { callClaude(text + "\n" + ctx); });
++            prefetchContext(intent, function(ctx) { callAgent(text + "\n" + ctx); });
+         } else {
+             statusText = tr("status.thinking");
+-            callClaude(text);
++            callAgent(text);
+         }
+     }
+ 
++    function chooseProvider(name) {
++        var next = name === "claude" ? "claude" : "codex";
++        if (provider === next) return;
++        provider = next;
++        clearMessages();
++        loadHistory();
++    }
++
++    function callAgent(prompt) {
++        if (provider === "claude") callClaude(prompt);
++        else callCodex(prompt);
++    }
++
+     // --- Pre-fetch context ---
+     function prefetchContext(intent, callback) {
+         if (intent.intent === "goto") {
+@@ -682,6 +707,7 @@ Singleton {
+     // Output is read as stream-json, one event per line, so every tool call
+     // shows up in the chat while the agent is still working.
+     property var _claudeProcess: null
++    property string _runningProvider: ""
+     property bool _gotResult: false
+     property string _lastText: ""
+     property var _toolNames: ({})
+@@ -763,6 +789,7 @@ Singleton {
+         _gotResult = false;
+         _lastText = "";
+         _toolNames = ({});
++        _runningProvider = "claude";
+ 
+         // exec: bash is replaced by claude, so Cancel's SIGTERM reaches claude itself.
+         var cmd = cdWorkDir + "exec claude -p"
+@@ -779,10 +806,43 @@ Singleton {
+         p.running = true;
+     }
+ 
++    function callCodex(prompt) {
++        statusText = tr(extendedThinking ? "status.thinking" : "status.processing");
++        _gotResult = false;
++        _lastText = "";
++        _toolNames = ({});
++        _runningProvider = "codex";
++
++        // Ignore the user's Codex config and rules so this small desktop panel
++        // cannot inherit broader permissions. The first turn fixes the session
++        // to the read-only sandbox; resumed turns retain that session policy.
++        var common = " --json --ignore-user-config --ignore-rules --skip-git-repo-check";
++        var model = codexModel.trim() ? " --model " + shellQuote(codexModel.trim()) : "";
++        var fullPrompt = sessionId ? prompt : systemPrompt + "\n\nUSER REQUEST:\n" + prompt;
++        var cmd;
++        if (sessionId) {
++            cmd = cdWorkDir + "exec codex exec resume" + common + model
++                + " " + shellQuote(sessionId) + " - 2>/dev/null <<< " + shellQuote(fullPrompt);
++        } else {
++            cmd = cdWorkDir + "exec codex exec" + common
++                + " --sandbox read-only -C " + shellQuote(workDir) + model
++                + " - 2>/dev/null <<< " + shellQuote(fullPrompt);
++        }
++
++        var p = claudeRunner.createObject(root, { shellCmd: cmd });
++        _claudeProcess = p;
++        p.running = true;
++    }
++
+     function handleStreamLine(line) {
+         var ev;
+         try { ev = JSON.parse(line); } catch(e) { return; }
+ 
++        if (_runningProvider === "codex") {
++            handleCodexStreamEvent(ev);
++            return;
++        }
++
+         var content = ev.message && Array.isArray(ev.message.content) ? ev.message.content : [];
+ 
+         if (ev.type === "assistant") {
+@@ -818,6 +878,59 @@ Singleton {
+         }
+     }
+ 
++    function handleCodexStreamEvent(ev) {
++        if (ev.type === "thread.started") {
++            if (ev.thread_id) sessionId = ev.thread_id;
++            return;
++        }
++
++        var item = ev.item || {};
++        if (ev.type === "item.started") {
++            if (item.type === "command_execution") {
++                var command = item.command || "command";
++                var step = describeTool("Command", { command: command });
++                addMessage("tool_status", step);
++                statusText = step;
++            } else if (item.type === "web_search") {
++                addMessage("tool_status", "Web search");
++                statusText = "Web search";
++            } else {
++                statusText = tr("status.thinking");
++            }
++            return;
++        }
++
++        if (ev.type === "item.completed") {
++            if (item.type === "agent_message" && item.text) {
++                _lastText = item.text;
++                statusText = tr("status.writing");
++            } else if (item.type === "command_execution" && item.exit_code !== undefined && item.exit_code !== 0) {
++                addMessage("tool_status", "✗ Command failed (exit " + item.exit_code + ")");
++            }
++            return;
++        }
++
++        if (ev.type === "turn.completed") {
++            _gotResult = true;
++            _claudeProcess = null;
++            lastCost = "";
++            if (ev.usage) {
++                var inp = ev.usage.input_tokens || 0;
++                var out = ev.usage.output_tokens || 0;
++                lastCost = inp + "→" + out + " tokens";
++            }
++            finishResponse(_lastText || "(done)");
++            return;
++        }
++
++        if (ev.type === "turn.failed" || ev.type === "error") {
++            _gotResult = true;
++            _claudeProcess = null;
++            var message = ev.message || (ev.error && ev.error.message) || "Codex request failed";
++            finishResponse("(error: " + message + ")");
++        }
++    }
++
+     // One line per tool call: name plus the most telling argument.
+     function describeTool(name, input) {
+         var inp = input || {};
+diff --git a/DmsAgent.qml b/DmsAgent.qml
+index 63d652a..660fb34 100644
+--- a/DmsAgent.qml
++++ b/DmsAgent.qml
+@@ -12,6 +12,11 @@ PluginComponent {
+ 
+     layerNamespacePlugin: "dmsAgent"
+ 
++    // Claude keeps its warm brand orange; Codex follows its monochrome UI.
++    readonly property color providerAccent: AgentService.provider === "codex"
++        ? (Theme.isLightMode ? "#18181b" : "#f4f4f5")
++        : "#d97757"
++
+     // Every bar gets its own instance, so the chat opens on the monitor of the
+     // pill that was clicked. AgentService keeps only one panel visible at a time
+     // and owns the IPC handler (a per-instance one would be registered twice).
+@@ -69,7 +74,9 @@ PluginComponent {
+     onPluginDataChanged: {
+         loadPanelPositions();
+         if (!pluginData) return;
++        AgentService.chooseProvider(pluginData.provider || "claude");
+         AgentService.claudeModel = pluginData.claudeModel || "haiku";
++        AgentService.codexModel = pluginData.codexModel || "";
+         AgentService.maxTokens = parseInt(pluginData.maxTokens) || 1024;
+         AgentService.bubbleFontSize = parseInt(pluginData.bubbleFontSize) || 13;
+         AgentService.panelHeightPercent = parseInt(pluginData.panelHeightPercent) || 75;
+@@ -185,7 +192,7 @@ PluginComponent {
+             }
+             Image {
+                 visible: !AgentService.busy
+-                source: root.aiIconSource(Theme.primary)
++                source: root.aiIconSource(root.providerAccent)
+                 width: root.iconSize; height: root.iconSize
+                 sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
+                 smooth: true; anchors.verticalCenter: parent.verticalCenter
+@@ -208,7 +215,7 @@ PluginComponent {
+             }
+             Image {
+                 visible: !AgentService.busy
+-                source: root.aiIconSource(Theme.primary)
++                source: root.aiIconSource(root.providerAccent)
+                 width: root.iconSize; height: root.iconSize
+                 sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
+                 smooth: true; anchors.horizontalCenter: parent.horizontalCenter
+diff --git a/DmsAgentChat.qml b/DmsAgentChat.qml
+index f8c3c66..f27204a 100644
+--- a/DmsAgentChat.qml
++++ b/DmsAgentChat.qml
+@@ -11,6 +11,18 @@ Item {
+ 
+     signal escapePressed()
+ 
++    // Provider-aware palette: Claude stays warm, while Codex uses a high-contrast
++    // monochrome treatment that remains legible in both light and dark themes.
++    readonly property color providerAccent: AgentService.provider === "codex"
++        ? (Theme.isLightMode ? "#18181b" : "#f4f4f5")
++        : "#d97757"
++    readonly property color providerAccentEnd: AgentService.provider === "codex"
++        ? (Theme.isLightMode ? "#52525b" : "#a1a1aa")
++        : "#f0a083"
++    readonly property color providerAccentText: AgentService.provider === "codex"
++        ? (Theme.isLightMode ? "#ffffff" : "#18181b")
++        : "#ffffff"
++
+     // Height the chat needs right now. The window shrinks to it, so it covers no more
+     // of the screen than it shows; that also keeps the area hidden from screen shares small.
+     readonly property real tooltipRoom: 40
+@@ -35,7 +47,7 @@ Item {
+         property string label: ""
+         property color fg: Theme.surfaceVariantText
+         property color bg: Theme.surfaceVariant
+-        property color copiedColor: Theme.primary
++        property color copiedColor: chatRoot.providerAccent
+         property bool copied: false
+ 
+         signal requested()
+@@ -200,13 +212,13 @@ Item {
+         readonly property bool current: AgentService.panelPositionFor(chatRoot.screenName) === posButton.position
+ 
+         width: 26; height: 26; radius: 13
+-        color: posButton.current ? Theme.withAlpha(Theme.primary, 0.15)
++        color: posButton.current ? Theme.withAlpha(chatRoot.providerAccent, 0.15)
+                                  : (posArea.containsMouse ? Theme.withAlpha(Theme.surfaceVariant, 0.3) : "transparent")
+ 
+         DankIcon {
+             anchors.centerIn: parent
+             name: posButton.iconName
+-            color: posButton.current ? Theme.primary : Theme.surfaceVariantText
++            color: posButton.current ? chatRoot.providerAccent : Theme.surfaceVariantText
+             size: 16
+         }
+ 
+@@ -278,7 +290,7 @@ Item {
+                         clip: true
+                         color: Theme.surfaceVariant
+                         border.width: 1
+-                        border.color: attachArea.containsMouse ? Theme.primary : Theme.withAlpha(Theme.outlineVariant, 0.5)
++                        border.color: attachArea.containsMouse ? chatRoot.providerAccent : Theme.withAlpha(Theme.outlineVariant, 0.5)
+ 
+                         Image {
+                             visible: parent.isImage
+@@ -420,7 +432,12 @@ Item {
+ 
+                         Row {
+                             id: modelRow; anchors.centerIn: parent; spacing: 4
+-                            Text { text: AgentService.claudeModel; font.pixelSize: 11; color: Theme.surfaceVariantText; anchors.verticalCenter: parent.verticalCenter }
++                            Text {
++                                text: AgentService.provider === "codex" ? "Codex" : "Claude · " + AgentService.claudeModel
++                                font.pixelSize: 11
++                                color: Theme.surfaceVariantText
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
+                             DankIcon { name: modelDropdown.visible ? "expand_less" : "expand_more"; color: Theme.surfaceVariantText; size: 14; anchors.verticalCenter: parent.verticalCenter }
+                         }
+ 
+@@ -430,11 +447,11 @@ Item {
+                     // Think
+                     Rectangle {
+                         width: thinkRow.implicitWidth + 14; height: 26; radius: 13
+-                        color: AgentService.extendedThinking ? Theme.withAlpha(Theme.primary, 0.15) : (thinkArea.containsMouse ? Theme.withAlpha(Theme.surfaceVariant, 0.3) : "transparent")
++                        color: AgentService.extendedThinking ? Theme.withAlpha(chatRoot.providerAccent, 0.15) : (thinkArea.containsMouse ? Theme.withAlpha(Theme.surfaceVariant, 0.3) : "transparent")
+                         Row {
+                             id: thinkRow; anchors.centerIn: parent; spacing: 4
+-                            DankIcon { name: "psychology"; color: AgentService.extendedThinking ? Theme.primary : Theme.surfaceVariantText; size: 14; anchors.verticalCenter: parent.verticalCenter }
+-                            Text { text: AgentService.tr("toolbar.think"); font.pixelSize: 11; color: AgentService.extendedThinking ? Theme.primary : Theme.surfaceVariantText; anchors.verticalCenter: parent.verticalCenter }
++                            DankIcon { name: "psychology"; color: AgentService.extendedThinking ? chatRoot.providerAccent : Theme.surfaceVariantText; size: 14; anchors.verticalCenter: parent.verticalCenter }
++                            Text { text: AgentService.tr("toolbar.think"); font.pixelSize: 11; color: AgentService.extendedThinking ? chatRoot.providerAccent : Theme.surfaceVariantText; anchors.verticalCenter: parent.verticalCenter }
+                         }
+                         MouseArea { id: thinkArea; anchors.fill: parent; hoverEnabled: true; onClicked: AgentService.extendedThinking = !AgentService.extendedThinking }
+                     }
+@@ -479,7 +496,7 @@ Item {
+ 
+                         Rectangle {
+                             width: 6; height: 6; radius: 3
+-                            anchors.verticalCenter: parent.verticalCenter; color: Theme.primary
++                            anchors.verticalCenter: parent.verticalCenter; color: chatRoot.providerAccent
+                             SequentialAnimation on opacity {
+                                 running: AgentService.busy; loops: Animation.Infinite
+                                 NumberAnimation { to: 0.2; duration: 600; easing.type: Easing.InOutSine }
+@@ -527,13 +544,13 @@ Item {
+                         width: 32; height: 32; radius: 16
+                         Layout.alignment: Qt.AlignVCenter
+                         readonly property bool armed: AgentService.pendingAttachments.some(function(a) { return a.kind === "shot"; })
+-                        color: armed ? Theme.withAlpha(Theme.primary, 0.15)
++                        color: armed ? Theme.withAlpha(chatRoot.providerAccent, 0.15)
+                             : (shotBtnArea.containsMouse ? Theme.withAlpha(Theme.surfaceVariant, 0.3) : "transparent")
+ 
+                         DankIcon {
+                             anchors.centerIn: parent
+                             name: "photo_camera"
+-                            color: shotButton.armed ? Theme.primary : Theme.surfaceVariantText
++                            color: shotButton.armed ? chatRoot.providerAccent : Theme.surfaceVariantText
+                             size: 18
+                         }
+ 
+@@ -568,9 +585,9 @@ Item {
+                     Rectangle {
+                         visible: !AgentService.busy
+                         width: 32; height: 32; radius: 16
+-                        color: canSend ? Theme.primary : Theme.withAlpha(Theme.surfaceVariant, 0.2)
++                        color: canSend ? chatRoot.providerAccent : Theme.withAlpha(Theme.surfaceVariant, 0.2)
+                         property bool canSend: inputField.text.trim().length > 0
+-                        DankIcon { anchors.centerIn: parent; name: "arrow_upward"; color: parent.canSend ? Theme.primaryText : Theme.surfaceVariantText; size: 18 }
++                        DankIcon { anchors.centerIn: parent; name: "arrow_upward"; color: parent.canSend ? chatRoot.providerAccentText : Theme.surfaceVariantText; size: 18 }
+                         MouseArea { anchors.fill: parent; onClicked: if (parent.canSend) sendCurrentMessage() }
+                         TipArea { text: AgentService.tr("tip.send") }
+                     }
+@@ -605,16 +622,16 @@ Item {
+     }
+ 
+     // --- Neon rims (behind the cards they outline) ---
+-    NeonBorder { target: inputCard; radius: 20 }
+-    NeonBorder { target: modelDropdown; radius: 12; glowOpacity: 0.25 }
+-    NeonBorder { target: historyDropdown; radius: 12; glowOpacity: 0.25 }
++    NeonBorder { target: inputCard; radius: 20; colorStart: chatRoot.providerAccent; colorEnd: chatRoot.providerAccentEnd }
++    NeonBorder { target: modelDropdown; radius: 12; glowOpacity: 0.25; colorStart: chatRoot.providerAccent; colorEnd: chatRoot.providerAccentEnd }
++    NeonBorder { target: historyDropdown; radius: 12; glowOpacity: 0.25; colorStart: chatRoot.providerAccent; colorEnd: chatRoot.providerAccentEnd }
+ 
+     // --- Model Dropdown (outside input card, z on top) ---
+     Rectangle {
+         id: modelDropdown; visible: false
+         anchors.bottom: inputCard.top; anchors.bottomMargin: 6
+         anchors.left: inputCard.left; anchors.leftMargin: 8
+-        width: 130; height: modelCol.height + 8; radius: 12
++        width: 180; height: modelCol.height + 8; radius: 12
+         color: Theme.surfaceContainerHighest
+         z: 20
+ 
+@@ -622,18 +639,38 @@ Item {
+             id: modelCol; anchors.top: parent.top; anchors.topMargin: 4
+             anchors.left: parent.left; anchors.right: parent.right
+             Repeater {
+-                model: [{ id: "haiku", label: "Haiku", desc: AgentService.tr("model.fast") }, { id: "sonnet", label: "Sonnet", desc: AgentService.tr("model.balanced") }, { id: "opus", label: "Opus", desc: AgentService.tr("model.best") }]
++                model: [
++                    { id: "codex", label: "Codex", desc: "OpenAI CLI" },
++                    { id: "haiku", label: "Claude Haiku", desc: AgentService.tr("model.fast") },
++                    { id: "sonnet", label: "Claude Sonnet", desc: AgentService.tr("model.balanced") },
++                    { id: "opus", label: "Claude Opus", desc: AgentService.tr("model.best") }
++                ]
+                 Rectangle {
++                    readonly property bool selected: modelData.id === "codex"
++                        ? AgentService.provider === "codex"
++                        : AgentService.provider === "claude" && AgentService.claudeModel === modelData.id
+                     width: modelCol.width; height: 32; radius: 8
+                     color: optArea.containsMouse ? Theme.withAlpha(Theme.surfaceVariant, 0.3) : "transparent"
+                     RowLayout {
+                         anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 6
+-                        Text { text: modelData.label; font.pixelSize: 12; font.weight: AgentService.claudeModel === modelData.id ? Font.Bold : Font.Normal; color: AgentService.claudeModel === modelData.id ? Theme.surfaceText : Theme.surfaceVariantText }
++                        Text { text: modelData.label; font.pixelSize: 12; font.weight: parent.parent.selected ? Font.Bold : Font.Normal; color: parent.parent.selected ? Theme.surfaceText : Theme.surfaceVariantText }
+                         Text { text: modelData.desc; font.pixelSize: 10; color: Theme.withAlpha(Theme.surfaceVariantText, 0.5) }
+                         Item { Layout.fillWidth: true }
+-                        DankIcon { visible: AgentService.claudeModel === modelData.id; name: "check"; color: Theme.primary; size: 14 }
++                        DankIcon { visible: parent.parent.selected; name: "check"; color: chatRoot.providerAccent; size: 14 }
++                    }
++                    MouseArea {
++                        id: optArea
++                        anchors.fill: parent
++                        hoverEnabled: true
++                        onClicked: {
++                            if (modelData.id === "codex") AgentService.chooseProvider("codex");
++                            else {
++                                AgentService.chooseProvider("claude");
++                                AgentService.claudeModel = modelData.id;
++                            }
++                            modelDropdown.visible = false;
++                        }
+                     }
+-                    MouseArea { id: optArea; anchors.fill: parent; hoverEnabled: true; onClicked: { AgentService.claudeModel = modelData.id; modelDropdown.visible = false; } }
+                 }
+             }
+         }
+@@ -945,7 +982,7 @@ Item {
+                 id: uRect; anchors.right: parent.right
+                 width: Math.min(parent.width * 0.8, uMetric.implicitWidth + 28)
+                 height: uTxt.implicitHeight + 11
+-                radius: 16; color: Theme.withAlpha(Theme.primary, AgentService.backgroundOpacity / 100)
++                radius: 16; color: Theme.withAlpha(chatRoot.providerAccent, AgentService.backgroundOpacity / 100)
+ 
+                 HoverHandler { id: uHover }
+ 
+@@ -958,13 +995,13 @@ Item {
+                     bottomPadding: 0
+                     text: content
+                     wrapMode: TextEdit.Wrap
+-                    color: Theme.primaryText
++                    color: chatRoot.providerAccentText
+                     font.pixelSize: AgentService.bubbleFontSize
+                     readOnly: true
+                     selectByMouse: true
+                     persistentSelection: true
+-                    selectionColor: Theme.withAlpha(Theme.primaryText, 0.3)
+-                    selectedTextColor: Theme.primaryText
++                    selectionColor: Theme.withAlpha(chatRoot.providerAccentText, 0.3)
++                    selectedTextColor: chatRoot.providerAccentText
+ 
+                     Keys.onEscapePressed: function(event) {
+                         event.accepted = true;
+@@ -981,9 +1018,9 @@ Item {
+                     Behavior on opacity { NumberAnimation { duration: 120 } }
+ 
+                     label: AgentService.tr("bubble.copyText")
+-                    fg: Theme.primary
+-                    bg: Theme.primaryText
+-                    copiedColor: Theme.primary
++                    fg: chatRoot.providerAccent
++                    bg: chatRoot.providerAccentText
++                    copiedColor: chatRoot.providerAccent
+                     onRequested: chatRoot.copyToClipboard(content)
+                 }
+             }
+@@ -1026,8 +1063,8 @@ Item {
+                     readOnly: true
+                     selectByMouse: true
+                     persistentSelection: true
+-                    selectionColor: Theme.primary
+-                    selectedTextColor: Theme.primaryText
++                    selectionColor: chatRoot.providerAccent
++                    selectedTextColor: chatRoot.providerAccentText
+ 
+                     Keys.onEscapePressed: function(event) {
+                         event.accepted = true;
+diff --git a/DmsAgentSettings.qml b/DmsAgentSettings.qml
+index 545c168..4673692 100644
+--- a/DmsAgentSettings.qml
++++ b/DmsAgentSettings.qml
+@@ -57,12 +57,31 @@ PluginSettings {
+                 spacing: Theme.spacingM
+ 
+                 StyledText {
+-                    text: "Claude"
++                    text: "AI Provider"
+                     font.pixelSize: Theme.fontSizeMedium
+                     font.weight: Font.Bold
+                     color: Theme.surfaceText
+                 }
+ 
++                SelectionSetting {
++                    settingKey: "provider"
++                    label: "Provider"
++                    description: "Use the locally signed-in Claude Code or Codex CLI."
++                    defaultValue: "claude"
++                    options: [
++                        { label: "Codex", value: "codex" },
++                        { label: "Claude", value: "claude" }
++                    ]
++                }
++
++                StringSetting {
++                    settingKey: "codexModel"
++                    label: "Codex Model"
++                    description: "Leave empty to use the Codex CLI default."
++                    placeholder: "Default"
++                    defaultValue: ""
++                }
++
+                 StringSetting {
+                     settingKey: "claudeModel"
+                     label: "Model"
+diff --git a/plugin.json b/plugin.json
+index cc345b6..f56ba99 100644
+--- a/plugin.json
++++ b/plugin.json
+@@ -2,7 +2,7 @@
+     "$schema": "https://github.com/AvengeMedia/DankMaterialShell/raw/refs/heads/master/PLUGINS/plugin-schema.json",
+     "id": "dmsAgent",
+     "name": "DMS AI Agent",
+-    "description": "AI desktop assistant powered by Claude Code: live tool progress, voice input, per-monitor chat",
++    "description": "AI desktop assistant powered by Claude Code or Codex: live tool progress, voice input, per-monitor chat",
+     "version": "0.4.0",
+     "license": "MIT",
+     "author": "francis, Cha1000000",
+@@ -12,6 +12,6 @@
+     "component": "./DmsAgent.qml",
+     "settings": "./DmsAgentSettings.qml",
+     "requires_dms": ">=1.4.0",
+-    "requires": ["bash", "curl", "xdg-open", "notify-send", "claude", "python3"],
++    "requires": ["bash", "curl", "xdg-open", "notify-send", "python3"],
+     "permissions": ["settings_read", "settings_write"]
+ }
+-- 
+2.55.0
+

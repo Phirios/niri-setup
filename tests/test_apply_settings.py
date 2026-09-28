@@ -127,6 +127,8 @@ class PluginSettingsTest(unittest.TestCase):
 
         self.assertTrue(merged["aiLimitCounter"]["enabled"])
         self.assertTrue(merged["dmsAgent"]["enabled"])
+        self.assertEqual(merged["dmsAgent"]["provider"], "claude")
+        self.assertEqual(merged["dmsAgent"]["codexModel"], "")
         self.assertTrue(merged["liveMode"]["enabled"])
         self.assertTrue(merged["liveWallpaper"]["enabled"])
         self.assertEqual(merged["liveWallpaper"]["videoPath"], "")
@@ -147,7 +149,7 @@ class PluginSettingsTest(unittest.TestCase):
     def test_choices_already_made_are_kept_except_the_safety_switches(self):
         current = {
             "aiLimitCounter": {"enabled": True, "provider": "codex"},
-            "dmsAgent": {"claudeModel": "sonnet", "autoUpdate": True},
+            "dmsAgent": {"provider": "codex", "codexModel": "gpt-5", "claudeModel": "sonnet", "autoUpdate": True},
             "somethingElse": {"enabled": False},
         }
 
@@ -155,6 +157,8 @@ class PluginSettingsTest(unittest.TestCase):
 
         self.assertEqual(merged["aiLimitCounter"]["provider"], "codex")
         self.assertEqual(merged["dmsAgent"]["claudeModel"], "sonnet")
+        self.assertEqual(merged["dmsAgent"]["provider"], "codex")
+        self.assertEqual(merged["dmsAgent"]["codexModel"], "gpt-5")
         self.assertFalse(merged["dmsAgent"]["autoUpdate"])
         self.assertEqual(merged["somethingElse"], {"enabled": False})
 
