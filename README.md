@@ -87,8 +87,14 @@ stays anchored to the monitor while workspaces animate over it.
 
 ## The chat panel and what it may do
 
-The panel runs your `claude` CLI, so it uses your own Claude subscription. Install
-[Claude Code](https://docs.claude.com/en/docs/claude-code) and log in first.
+The panel can run either the `claude` or `codex` CLI with your own signed-in account. Claude
+remains the default for existing installs; choose Codex in Settings > Plugins > DMS AI Agent or
+from the model menu in the chat. The accent colors follow the active provider: warm orange for
+Claude and a high-contrast monochrome palette for Codex.
+
+Install [Claude Code](https://docs.claude.com/en/docs/claude-code) for Claude, or install and sign
+in to [Codex](https://developers.openai.com/learn/codex) for the Codex option. Codex runs with its user configuration and rules ignored and a
+read-only filesystem sandbox; Claude uses the explicit command and folder allowlist below.
 
 Upstream starts Claude with `--dangerously-skip-permissions`: any command, no questions.
 The patches replace that with an allowlist. Whatever is not on it is refused.

@@ -22,7 +22,14 @@ BAR_TRANSPARENCY = 0.7
 WIDGET_TRANSPARENCY = 0.9
 POPUP_TRANSPARENCY = 0.78
 
-AGENT_DEFAULTS = {"enabled": True, "claudeModel": "haiku", "pillLabel": "Claude", "backgroundOpacity": 80}
+AGENT_DEFAULTS = {
+    "enabled": True,
+    "provider": "claude",
+    "claudeModel": "haiku",
+    "codexModel": "",
+    "pillLabel": "Claude",
+    "backgroundOpacity": 80,
+}
 LIVE_DEFAULTS = {"silenceNotifications": True, "keepAwake": True}
 # Without a video the plugin does nothing; it is chosen in the settings or with --wallpaper.
 WALLPAPER_DEFAULTS = {
