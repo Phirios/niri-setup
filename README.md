@@ -71,10 +71,14 @@ share has been running. Live mode switches on Do Not Disturb and holds off the i
 gives both back when the last share ends. It only gives back what it switched on itself: if
 you had Do Not Disturb on already, it stays on. Both can be switched off in the plugin settings.
 
-`~/.config/niri/custom/privacy.kdl` keeps a few things out of screen shares and recordings:
+`~/.config/niri/custom/privacy-rules.kdl` keeps a few things out of screen shares and recordings:
 notifications, clipboard history, Wi-Fi password dialogs, password prompts and
 common password managers. You still see them; viewers get a black rectangle the size of the
 whole surface. Add a `match app-id=...` line for any other app you want hidden.
+
+Click the `LIVE` pill during a share for switches: hide private surfaces, silence
+notifications, keep the screen awake. The privacy switch stays as you leave it; the other two
+last for the share.
 
 ## Live wallpaper
 

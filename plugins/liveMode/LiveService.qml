@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Common
 import qs.Services
 import "live.js" as Live
@@ -31,6 +32,36 @@ Singleton {
 
     readonly property bool ownsDnd: session.dnd
     readonly property bool ownsInhibit: session.inhibit
+
+    readonly property string privacySwitchPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config")
+        + "/niri/custom/privacy.kdl"
+    readonly property bool privacyOn: Live.isPrivacyOn(privacySwitch.loaded ? privacySwitch.text() : "")
+
+    function setSilenced(on) {
+        SessionData.setDoNotDisturb(on, 0);
+    }
+
+    function setAwake(on) {
+        if (on) {
+            SessionService.setInhibitReason("Screen share");
+            SessionService.enableIdleInhibit();
+        } else {
+            SessionService.disableIdleInhibit();
+        }
+    }
+
+    function setPrivacy(on) {
+        privacySwitch.setText(Live.privacySwitchText(on));
+    }
+
+    FileView {
+        id: privacySwitch
+
+        path: root.privacySwitchPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+    }
 
     function nowSecs() {
         return Math.floor(Date.now() / 1000);

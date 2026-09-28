@@ -50,3 +50,17 @@ function planEnd(owned, current) {
         inhibit: !!owned.inhibit && !!current.inhibit
     };
 }
+
+// custom/privacy.kdl is a switch: it either includes privacy-rules.kdl or includes nothing.
+// niri reloads it on change, so rewriting it turns the screen-share rules on or off at once.
+var PRIVACY_INCLUDE = 'include optional=true "privacy-rules.kdl"';
+
+function privacySwitchText(on) {
+    var header = "// Written by the Live Mode plugin; use its switch in the bar instead of editing this.\n"
+        + "// The rules themselves are in privacy-rules.kdl.\n";
+    return header + (on ? PRIVACY_INCLUDE : "// hiding is switched off") + "\n";
+}
+
+function isPrivacyOn(text) {
+    return (text || "").split("\n").some(function (line) { return line.trim() === PRIVACY_INCLUDE; });
+}

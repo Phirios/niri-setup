@@ -118,7 +118,10 @@ setup_niri() {
 
   mkdir -p "$NIRI_DIR/custom" "$NIRI_DIR/scripts"
   install -m644 "$ROOT/niri/custom/binds.kdl" "$NIRI_DIR/custom/binds.kdl"
-  install -m644 "$ROOT/niri/custom/privacy.kdl" "$NIRI_DIR/custom/privacy.kdl"
+  install -m644 "$ROOT/niri/custom/privacy-rules.kdl" "$NIRI_DIR/custom/privacy-rules.kdl"
+  # The switch that live mode flips; a re-run keeps whatever it was set to.
+  [[ -e "$NIRI_DIR/custom/privacy.kdl" ]] && grep -q "Live Mode plugin" "$NIRI_DIR/custom/privacy.kdl" \
+    || install -m644 "$ROOT/niri/custom/privacy.kdl" "$NIRI_DIR/custom/privacy.kdl"
   install -m644 "$ROOT/niri/custom/apps.kdl" "$NIRI_DIR/custom/apps.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m644 "$ROOT/niri/dms-ai-agent.kdl" "$NIRI_DIR/dms-ai-agent.kdl"

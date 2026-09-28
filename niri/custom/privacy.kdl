@@ -1,21 +1,3 @@
-// Hidden from screen shares and recordings. You still see these on your own screen;
-// viewers see a black rectangle in their place. Screenshots are not affected.
-
-// Shell surfaces that can show private text.
-layer-rule {
-    match namespace="^dms:notification"
-    match namespace="^dms:clipboard"
-    match namespace="^dms:wifi-"
-    match namespace="^dms:polkit-auth-surface$"
-    block-out-from "screencast"
-}
-
-// Apps. Add a line per app; `niri msg windows` prints the app id of everything open.
-window-rule {
-    match app-id=r#"^gcr-prompter$"#
-    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
-    match app-id=r#"^org\.gnome\.World\.Secrets$"#
-    match app-id=r#"^[Bb]itwarden$"#
-    match app-id=r#"^1[Pp]assword$"#
-    block-out-from "screencast"
-}
+// Written by the Live Mode plugin; use its switch in the bar instead of editing this.
+// The rules themselves are in privacy-rules.kdl.
+include optional=true "privacy-rules.kdl"

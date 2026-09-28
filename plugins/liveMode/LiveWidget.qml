@@ -61,6 +61,11 @@ PluginComponent {
         required property string title
         required property string detail
         property bool active: true
+        /** Shows a switch on the right when set; called with the new state. */
+        property var toggleAction: null
+
+        readonly property real textWidth: width - Theme.iconSize - Theme.spacingM
+            - (toggleAction ? toggle.width + Theme.spacingM : 0)
 
         spacing: Theme.spacingM
 
@@ -73,7 +78,7 @@ PluginComponent {
 
         Column {
             anchors.verticalCenter: parent.verticalCenter
-            width: row.width - Theme.iconSize - Theme.spacingM
+            width: row.textWidth
             spacing: 2
 
             StyledText {
@@ -92,6 +97,16 @@ PluginComponent {
                 color: Theme.withAlpha(Theme.surfaceText, 0.55)
                 wrapMode: Text.WordWrap
             }
+        }
+
+        DankToggle {
+            id: toggle
+
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !!row.toggleAction
+            hideText: true
+            checked: row.active
+            onToggled: checked => row.toggleAction(checked)
         }
     }
 
@@ -207,10 +222,13 @@ PluginComponent {
                 active: SessionData.doNotDisturb
                 title: SessionData.doNotDisturb ? "Notifications are silenced" : "Notifications are on"
                 detail: {
+                    if (!SessionData.doNotDisturb)
+                        return "Viewers may see notifications pop up";
                     if (LiveService.ownsDnd)
                         return "Switched on for this share, off again when it ends";
-                    return SessionData.doNotDisturb ? "You had this on already, so it stays on" : "Live mode is not silencing them";
+                    return "You had this on already, so it stays on";
                 }
+                toggleAction: on => LiveService.setSilenced(on)
             }
 
             StateRow {
@@ -219,17 +237,24 @@ PluginComponent {
                 active: SessionService.idleInhibited
                 title: SessionService.idleInhibited ? "Screen stays awake" : "Screen may lock when idle"
                 detail: {
+                    if (!SessionService.idleInhibited)
+                        return "The lock screen can come up during the share";
                     if (LiveService.ownsInhibit)
                         return "Held for this share, released when it ends";
-                    return SessionService.idleInhibited ? "You had this on already, so it stays on" : "Live mode is not holding it";
+                    return "You had this on already, so it stays on";
                 }
+                toggleAction: on => LiveService.setAwake(on)
             }
 
             StateRow {
                 width: panel.innerWidth
-                icon: "visibility_off"
-                title: "Private surfaces are hidden"
-                detail: "Set in ~/.config/niri/custom/privacy.kdl. Your terminal and other windows are visible."
+                icon: LiveService.privacyOn ? "visibility_off" : "visibility"
+                active: LiveService.privacyOn
+                title: LiveService.privacyOn ? "Private surfaces are hidden" : "Everything is visible"
+                detail: LiveService.privacyOn
+                    ? "Chat, notifications, clipboard and password prompts show as black. Stays set after the share."
+                    : "Viewers see the AI chat, notifications and clipboard too"
+                toggleAction: on => LiveService.setPrivacy(on)
             }
         }
     }
