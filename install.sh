@@ -125,7 +125,7 @@ setup_niri() {
   install -m644 "$ROOT/niri/custom/apps.kdl" "$NIRI_DIR/custom/apps.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m755 "$ROOT/niri/scripts/dms-run.sh" "$NIRI_DIR/scripts/dms-run.sh"
-  install -m755 "$ROOT/niri/scripts/grid.sh" "$NIRI_DIR/scripts/grid.sh"
+  install -m755 "$ROOT/niri/scripts/grid.py" "$NIRI_DIR/scripts/grid.py"
   # Start DMS from a patched copy of its UI; see the script for the patch.
   sed -i 's|^spawn-at-startup "dms" "run"$|spawn-at-startup "sh" "-c" "exec ~/.config/niri/scripts/dms-run.sh"|' \
     "$NIRI_DIR/config.kdl"
@@ -262,6 +262,7 @@ Keys (Super is the Windows key):
   Super+Q       close window        Super+D       show desktop
   Super+A       AI chat             Super+Comma   settings
   Super+B       power profile       Super+G       windows in a grid
+  Super+Shift+G undo the grid
   Super+Shift+/ all shortcuts       Super+Shift+E leave niri
 
 If DMS was already running, restart it to load the changes:

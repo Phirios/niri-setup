@@ -58,6 +58,7 @@ Anything that already exists is copied to a `.bak-<timestamp>` sibling before it
 | `Super+A` | AI chat |
 | `Super+B` | Cycle power profile |
 | `Super+G` | Fit all windows of the workspace on screen as a grid: 2 side by side, 4 as 2x2, 6 as 3x2, 9 as 3x3 |
+| `Super+Shift+G` | Put the windows back the way they were before `Super+G` |
 | `Super+Up` / `Super+Down` | Window above or below, then the next workspace (no Page Up/Down needed) |
 | `Super+Comma` | DMS settings |
 | `Super+Shift+/` | All shortcuts |
