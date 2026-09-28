@@ -12,8 +12,10 @@ import time
 from pathlib import Path
 
 PLUGIN_WIDGETS = ("aiLimitCounter", "dmsAgent")
-# Only visible while the screen is shared; first, so it never shifts the widgets next to it.
-LEADING_WIDGET = "liveMode"
+# Only visible while the screen is shared. It sits at the end of the centre section, which DMS
+# re-centres as it grows; at the start of the right section it ran into the weather pill.
+LIVE_WIDGET = "liveMode"
+DEFAULT_CENTER_WIDGETS = ("music", "clock", "weather")
 DEFAULT_RIGHT_WIDGETS = (
     "systemTray", "clipboard", "cpuUsage", "memUsage", "notificationButton", "battery", "controlCenterButton",
 )
@@ -40,10 +42,13 @@ WALLPAPER_DEFAULTS = {
 AGENT_SAFETY = {"autoUpdate": False, "voiceEnabled": False}
 
 
+def with_live_widget(widgets):
+    return widgets if LIVE_WIDGET in widgets else [*widgets, LIVE_WIDGET]
+
+
 def with_plugin_widgets(widgets):
     """Put the plugin widgets right after the clipboard, or at the end when there is none."""
-    if LEADING_WIDGET not in widgets:
-        widgets = [LEADING_WIDGET, *widgets]
+    widgets = [name for name in widgets if name != LIVE_WIDGET]
     missing = [name for name in PLUGIN_WIDGETS if name not in widgets]
     if "clipboard" not in widgets:
         return [*widgets, *missing]
@@ -69,6 +74,7 @@ def merge_shell_settings(current, theme_file):
         return {
             **current,
             **look,
+            "dankBarCenterWidgets": with_live_widget(list(current.get("dankBarCenterWidgets", DEFAULT_CENTER_WIDGETS))),
             "dankBarRightWidgets": with_plugin_widgets(list(current.get("dankBarRightWidgets", DEFAULT_RIGHT_WIDGETS))),
             "dankBarTransparency": BAR_TRANSPARENCY,
             "dankBarWidgetTransparency": WIDGET_TRANSPARENCY,
@@ -76,6 +82,7 @@ def merge_shell_settings(current, theme_file):
 
     main_bar = {
         **bars[0],
+        "centerWidgets": with_live_widget(list(bars[0].get("centerWidgets", DEFAULT_CENTER_WIDGETS))),
         "rightWidgets": with_plugin_widgets(list(bars[0].get("rightWidgets", []))),
         "transparency": BAR_TRANSPARENCY,
         "widgetTransparency": WIDGET_TRANSPARENCY,

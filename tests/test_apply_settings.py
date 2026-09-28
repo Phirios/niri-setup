@@ -20,7 +20,8 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertFalse(merged["modalDarkenBackground"])
         self.assertIn("aiLimitCounter", merged["dankBarRightWidgets"])
         self.assertIn("dmsAgent", merged["dankBarRightWidgets"])
-        self.assertEqual(merged["dankBarRightWidgets"][0], "liveMode")
+        self.assertNotIn("liveMode", merged["dankBarRightWidgets"])
+        self.assertEqual(merged["dankBarCenterWidgets"], ["music", "clock", "weather", "liveMode"])
         self.assertEqual(merged["dankBarTransparency"], 0.7)
         self.assertEqual(merged["dankBarWidgetTransparency"], 0.9)
         self.assertNotIn("barConfigs", merged)
@@ -30,8 +31,7 @@ class ShellSettingsTest(unittest.TestCase):
 
         bar = merge_shell_settings(current, THEME)["barConfigs"][0]
 
-        self.assertEqual(
-            bar["rightWidgets"], ["liveMode", "systemTray", "clipboard", "aiLimitCounter", "dmsAgent", "battery"])
+        self.assertEqual(bar["rightWidgets"], ["systemTray", "clipboard", "aiLimitCounter", "dmsAgent", "battery"])
         self.assertEqual(bar["transparency"], 0.7)
         self.assertEqual(bar["widgetTransparency"], 0.9)
 
@@ -40,7 +40,7 @@ class ShellSettingsTest(unittest.TestCase):
 
         bar = merge_shell_settings(current, THEME)["barConfigs"][0]
 
-        self.assertEqual(bar["rightWidgets"], ["liveMode", "battery", "aiLimitCounter", "dmsAgent"])
+        self.assertEqual(bar["rightWidgets"], ["battery", "aiLimitCounter", "dmsAgent"])
 
     def test_running_twice_does_not_duplicate_widgets(self):
         once = merge_shell_settings({"barConfigs": [{"id": "default", "rightWidgets": ["clipboard"]}]}, THEME)
@@ -48,8 +48,18 @@ class ShellSettingsTest(unittest.TestCase):
         twice = merge_shell_settings(once, THEME)
 
         self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("dmsAgent"), 1)
-        self.assertEqual(twice["barConfigs"][0]["rightWidgets"].count("liveMode"), 1)
+        self.assertEqual(twice["barConfigs"][0]["centerWidgets"].count("liveMode"), 1)
         self.assertEqual(twice, once)
+
+    def test_live_pill_moves_from_the_right_to_the_center(self):
+        current = {"barConfigs": [{
+            "id": "default", "centerWidgets": ["clock"], "rightWidgets": ["liveMode", "clipboard"],
+        }]}
+
+        bar = merge_shell_settings(current, THEME)["barConfigs"][0]
+
+        self.assertEqual(bar["centerWidgets"], ["clock", "liveMode"])
+        self.assertEqual(bar["rightWidgets"], ["clipboard", "aiLimitCounter", "dmsAgent"])
 
     def test_other_bars_and_settings_are_kept(self):
         current = {

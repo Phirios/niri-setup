@@ -80,6 +80,7 @@ Singleton {
         pluginId = id;
         session = Object.assign({}, noSession, service.loadPluginState(id, stateKey, noSession));
         sync();
+        startupGrace.start();
     }
 
     function remember(next) {
@@ -116,11 +117,20 @@ Singleton {
             return;
         if (live)
             begin();
-        else if (session.startedAt > 0)
+        // Right after a shell restart niri has not reported its casts yet, so "no cast" may
+        // only mean "not known yet". Ending then would restart the timer and flicker the settings.
+        else if (session.startedAt > 0 && !startupGrace.running)
             end();
     }
 
     onLiveChanged: sync()
+
+    Timer {
+        id: startupGrace
+
+        interval: 5000
+        onTriggered: root.sync()
+    }
 
     Timer {
         interval: 1000
