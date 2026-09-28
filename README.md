@@ -25,8 +25,8 @@ Use `./install.sh --skip-packages` when niri and DMS are already installed.
 
 | Step | Result |
 |------|--------|
-| Packages | `niri`, `xwayland-satellite`, `kitty`, `dms` (from the `avengemedia/dms` COPR) and the tools the plugins call |
-| niri config | The DMS default config, with `kitty` as terminal, plus two keybinds of our own |
+| Packages | `niri`, `xwayland-satellite`, `ghostty`, `dms` (from the `avengemedia/dms` COPR) and the tools the plugins call |
+| niri config | The DMS default config plus persistent 60%-keyboard-friendly keybinds |
 | Theme | `Ink`: near-black surfaces, `#d97757` accent, blur on, translucent bar and popups |
 | AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
@@ -41,18 +41,25 @@ Anything that already exists is copied to a `.bak-<timestamp>` sibling before it
 
 | Key | Action |
 |-----|--------|
-| `Super+T` | Terminal |
+| `Super+T`, `Super+Enter` | Ghostty |
 | `Super+Space` | App launcher |
 | `Super+Q` | Close window |
+| `Super+H/J/K/L` | Focus left/down/up/right |
+| `Super+Shift+H/J/K/L` | Move window left/down/up/right |
+| `Super+U/I` | Focus workspace down/up |
+| `Super+Ctrl+U/I` | Move window to workspace down/up |
+| `Super+M/Comma` | Focus first/last column |
 | `Super+D` | Show desktop, press again to go back |
 | `Super+A` | AI chat |
 | `Super+B` | Cycle power profile |
-| `Super+Comma` | DMS settings |
+| `Super+Alt+M` | Task manager |
+| `Super+Alt+Comma` | DMS settings |
 | `Super+Shift+/` | All shortcuts |
 | `Super+Shift+E` | Leave niri |
 
 Your own keybinds go in `~/.config/niri/custom/binds.kdl`. DMS rewrites the files under
-`~/.config/niri/dms/`, so changes there do not last.
+`~/.config/niri/dms/`, so changes there do not last. The installer removes DMS's conflicting
+arrow-key bindings before loading the persistent shortcuts.
 
 ## Screen sharing
 

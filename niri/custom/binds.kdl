@@ -1,5 +1,45 @@
 // Personal keybinds. DMS never rewrites this file.
 binds {
+    // Applications
+    Mod+T repeat=false hotkey-overlay-title="Open Ghostty" { spawn "ghostty"; }
+    Mod+Return repeat=false hotkey-overlay-title="Open Ghostty" { spawn "ghostty"; }
+    Mod+Alt+M hotkey-overlay-title="Task Manager" { spawn "dms" "ipc" "call" "processlist" "focusOrToggle"; }
+    Mod+Alt+Comma hotkey-overlay-title="Settings" { spawn "dms" "ipc" "call" "settings" "focusOrToggle"; }
+
+    // Window focus and movement
+    Mod+H { focus-column-left; }
+    Mod+J { focus-window-down; }
+    Mod+K { focus-window-up; }
+    Mod+L { focus-column-right; }
+    Mod+Shift+H { move-column-left; }
+    Mod+Shift+J { move-window-down; }
+    Mod+Shift+K { move-window-up; }
+    Mod+Shift+L { move-column-right; }
+
+    // First and last column
+    Mod+M { focus-column-first; }
+    Mod+Comma { focus-column-last; }
+    Mod+Ctrl+M { move-column-to-first; }
+    Mod+Ctrl+Comma { move-column-to-last; }
+
+    // Monitor focus and movement
+    Mod+Ctrl+H { focus-monitor-left; }
+    Mod+Ctrl+J { focus-monitor-down; }
+    Mod+Ctrl+K { focus-monitor-up; }
+    Mod+Ctrl+L { focus-monitor-right; }
+    Mod+Shift+Ctrl+H { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+J { move-column-to-monitor-down; }
+    Mod+Shift+Ctrl+K { move-column-to-monitor-up; }
+    Mod+Shift+Ctrl+L { move-column-to-monitor-right; }
+
+    // Workspace focus and movement
+    Mod+U { focus-workspace-down; }
+    Mod+I { focus-workspace-up; }
+    Mod+Ctrl+U { move-column-to-workspace-down; }
+    Mod+Ctrl+I { move-column-to-workspace-up; }
+    Mod+Shift+U { move-workspace-down; }
+    Mod+Shift+I { move-workspace-up; }
+
     Mod+D repeat=false hotkey-overlay-title="Show Desktop" { spawn "sh" "-c" "exec ~/.config/niri/scripts/show-desktop.sh"; }
     Mod+B repeat=false hotkey-overlay-title="Cycle Power Profile" { spawn "dms" "ipc" "call" "powerprofile" "cycle"; }
 }

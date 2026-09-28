@@ -15,10 +15,9 @@ NIRI_DIR="$CONFIG_HOME/niri"
 DMS_DIR="$CONFIG_HOME/DankMaterialShell"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
-TERMINAL="kitty"
 DMS_COPR="avengemedia/dms"
 PACKAGES=(
-  niri xwayland-satellite xdg-desktop-portal-gnome "$TERMINAL"
+  niri xwayland-satellite xdg-desktop-portal-gnome ghostty
   git cargo python3 jq
   dbus-devel pkgconf-pkg-config
   gtk3 xdg-utils libnotify playerctl wl-clipboard procps-ng
@@ -106,9 +105,8 @@ setup_niri() {
   # Without systemd integration DMS starts from the niri config, so it never runs in other sessions.
   dms setup headless --compositor niri --no-systemd --force >/dev/null
 
-  # DMS assumes ghostty, which Fedora does not ship.
-  sed -i "s/TERMINAL \"ghostty\"/TERMINAL \"$TERMINAL\"/" "$NIRI_DIR/config.kdl"
-  sed -i "s/{ spawn \"ghostty\"; }/{ spawn \"$TERMINAL\"; }/" "$NIRI_DIR/dms/binds.kdl"
+  # Keep personal shortcuts in custom/binds.kdl and remove conflicting DMS defaults.
+  python3 "$ROOT/lib/apply_niri_binds.py" "$NIRI_DIR/dms/binds.kdl"
 
   mkdir -p "$NIRI_DIR/custom" "$NIRI_DIR/scripts"
   install -m644 "$ROOT/niri/custom/binds.kdl" "$NIRI_DIR/custom/binds.kdl"
@@ -196,9 +194,11 @@ or run this again with --wallpaper FILE.
   3. Your old desktop is still in that same session menu.
 
 Keys (Super is the Windows key):
-  Super+T       terminal            Super+Space   app launcher
+  Super+T/Enter Ghostty             Super+Space   app launcher
+  Super+H/J/K/L focus windows       add Shift to move them
+  Super+U/I     change workspace    add Ctrl to move a window
   Super+Q       close window        Super+D       show desktop
-  Super+A       AI chat             Super+Comma   settings
+  Super+A       AI chat             Super+Alt+,   settings
   Super+B       power profile
   Super+Shift+/ all shortcuts       Super+Shift+E leave niri
 
