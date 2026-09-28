@@ -17,6 +17,7 @@ class ShellSettingsTest(unittest.TestCase):
         self.assertEqual(merged["currentThemeName"], "custom")
         self.assertEqual(merged["customThemeFile"], THEME)
         self.assertTrue(merged["blurEnabled"])
+        self.assertFalse(merged["modalDarkenBackground"])
         self.assertIn("aiLimitCounter", merged["dankBarRightWidgets"])
         self.assertIn("dmsAgent", merged["dankBarRightWidgets"])
         self.assertEqual(merged["dankBarRightWidgets"][0], "liveMode")

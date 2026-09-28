@@ -58,6 +58,9 @@ def merge_shell_settings(current, theme_file):
         "currentThemeCategory": "custom",
         "customThemeFile": theme_file,
         "blurEnabled": True,
+        # A dimmed backdrop makes DMS draw a modal as one full-screen surface, which the
+        # screen-share rules can only black out whole.
+        "modalDarkenBackground": False,
         "popupTransparency": POPUP_TRANSPARENCY,
     }
     bars = current.get("barConfigs")

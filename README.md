@@ -72,10 +72,11 @@ gives both back when the last share ends. It only gives back what it switched on
 you had Do Not Disturb on already, it stays on. Both can be switched off in the plugin settings.
 
 `~/.config/niri/custom/privacy-rules.kdl` keeps a few things out of screen shares and recordings:
-the AI chat, notification popups, Wi-Fi password dialogs, password prompts and common password
-managers. You still see them; viewers get a black rectangle the size of the whole surface. The
-notification center and clipboard history are not hidden: they cover the entire screen while
-open, so hiding them would black out everything. Add a `match app-id=...` line for any other app you want hidden.
+the AI chat, notifications, the notification center, clipboard history, Wi-Fi password dialogs,
+password prompts and common password managers. You still see them; viewers get a black
+rectangle the size of the panel. For that, the installer turns off the dimmed backdrop behind
+DMS dialogs, because with it DMS draws a dialog as one full-screen surface and hiding it would
+black out the whole screen. Add a `match app-id=...` line for any other app you want hidden.
 
 Click the `LIVE` pill during a share for switches: hide private surfaces, silence
 notifications, keep the screen awake. The privacy switch stays as you leave it; the other two

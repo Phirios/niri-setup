@@ -1,12 +1,16 @@
 // Hidden from screen shares and recordings. You still see these on your own screen;
 // viewers see a black rectangle in their place. Screenshots are not affected.
 
-// Shell surfaces that can show private text. Niri blacks out a whole surface, so only
-// surfaces sized to their content belong here: the notification center and clipboard
-// history cover the entire screen while open, and hiding them blacks out everything.
+// Shell surfaces that can show private text. Niri blacks out a whole surface, so each name
+// is matched exactly: DMS pairs these panels with a full-screen click catcher named
+// "<panel>:background" or "<panel>:clickcatcher", and hiding that blacks out everything.
 layer-rule {
     match namespace="^dms:agent$"
     match namespace="^dms:notification-popup$"
+    match namespace="^dms:notification-center-popout$"
+    match namespace="^dms:notification-center-modal$"
+    match namespace="^dms:clipboard$"
+    match namespace="^dms:clipboard-popout$"
     block-out-from "screencast"
 }
 
