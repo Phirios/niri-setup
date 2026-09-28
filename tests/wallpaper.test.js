@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {test} = require('node:test');
 
-const NAMES = ['isGame', 'isGaming', 'decide', 'mpvpaperArgs', 'mayRetry', 'isCovered', 'ipcPath', 'pauseCommand'];
+const NAMES = ['isGame', 'isGaming', 'decide', 'mpvpaperArgs', 'mayRetry', 'isCovered', 'ipcPath', 'pauseCommand', 'loadCommand'];
 const source = fs
     .readFileSync(path.join(__dirname, '../plugins/liveWallpaper/wallpaper.js'), 'utf8')
     .replace(/^\.pragma library$/m, '');
@@ -106,4 +106,10 @@ test('an output niri does not report is treated as visible', () => {
 test('writes one JSON line that sets mpv\'s pause property', () => {
     assert.equal(Wallpaper.pauseCommand(true), '{"command":["set_property","pause",true]}\n');
     assert.equal(Wallpaper.pauseCommand(false), '{"command":["set_property","pause",false]}\n');
+});
+
+test('writes one JSON line that switches the running video', () => {
+    assert.equal(
+        Wallpaper.loadCommand('/home/me/Videos/Wallpapers/night city.mp4'),
+        '{"command":["loadfile","/home/me/Videos/Wallpapers/night city.mp4","replace"]}\n');
 });

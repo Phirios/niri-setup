@@ -104,6 +104,11 @@ or later in Settings > Plugins > Live Wallpaper. Videos that are not VP9 or AV1 
 to VP9 on install, because on an Intel GPU those decode in hardware at about 3% of one core,
 while H.264 fell back to software and took a full core in testing.
 
+Videos in `~/Videos/Wallpapers` also appear as previews in DMS's normal Wallpapers tab.
+Selecting one there switches the running mpvpaper immediately; selecting a still image hands
+the wallpaper back to DMS. The active video has a check badge. Preview images are generated at
+startup and linked into `~/Pictures/Wallpapers`, without copying the videos themselves.
+
 Each monitor plays only while its workspace is empty or the overview is open, which is when the
 wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The
 still wallpaper stays underneath.

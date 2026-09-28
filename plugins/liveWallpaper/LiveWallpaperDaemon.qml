@@ -73,6 +73,24 @@ PluginComponent {
                     control.write(Wallpaper.pauseCommand(paused));
             }
 
+            // Switching through DMS should be immediate. Updating Process.command alone does
+            // not restart a running mpvpaper, so tell its mpv child to load the new file.
+            Connections {
+                target: root
+                function onVideoPathChanged() {
+                    if (control.connected && root.videoPath) {
+                        control.write(Wallpaper.loadCommand(root.videoPath));
+                        return;
+                    }
+                    videoReload.restart();
+                }
+            }
+
+            Timer {
+                id: videoReload
+                interval: 100
+            }
+
             onPausedChanged: sendPause()
 
             // mpv's control socket. It appears a moment after mpvpaper starts, so connecting is
@@ -98,13 +116,13 @@ PluginComponent {
                 id: mpvpaper
 
                 command: Wallpaper.mpvpaperArgs(root.mpvpaperPath, player.modelData.name, root.videoPath, player.socketPath)
-                running: root.shouldRun && !restart.running
+                running: root.shouldRun && !restart.running && !videoReload.running
                 onStarted: player.startedAt = Date.now()
                 onRunningChanged: {
                     if (!running)
                         control.connected = false;
                     // Still wanted but gone: it crashed, or could not be started at all.
-                    if (running || !root.shouldRun)
+                    if (running || !root.shouldRun || videoReload.running)
                         return;
                     const livedLong = player.startedAt > 0 && Date.now() - player.startedAt > restart.interval * 6;
                     root.failures = livedLong ? 1 : root.failures + 1;

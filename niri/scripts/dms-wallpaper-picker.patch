@@ -1,0 +1,107 @@
+--- a/Modules/DankDash/WallpaperTab.qml
++++ b/Modules/DankDash/WallpaperTab.qml
+@@ -7,0 +8 @@
++import qs.Services
+@@ -35,0 +37 @@
++    property string liveVideoPath: expandHome(SettingsData.getPluginSetting("liveWallpaper", "videoPath", ""))
+@@ -46,0 +49,44 @@
++    function normalizeLocalPath(path) {
++        let value = String(path || "").replace(/^file:\/\//, "");
++        try {
++            value = decodeURIComponent(value);
++        } catch (e) {
++        }
++        return value;
++    }
++
++    function pathsEqual(left, right) {
++        return normalizeLocalPath(left) === normalizeLocalPath(right);
++    }
++
++    function expandHome(path) {
++        const value = normalizeLocalPath(path);
++        const localHome = normalizeLocalPath(homeDir);
++        if (value === "~")
++            return localHome;
++        return value.indexOf("~/") === 0 ? localHome + value.slice(1) : value;
++    }
++
++    function isLiveWallpaperThumbnail(path) {
++        return /\.(mp4|webm|mkv|mov)\.jpg$/i.test(String(path || ""));
++    }
++
++    function videoPathForThumbnail(path) {
++        const fileName = String(path).substring(String(path).lastIndexOf('/') + 1);
++        return expandHome("~") + "/Videos/Wallpapers/" + fileName.replace(/\.jpg$/i, "");
++    }
++
++    function thumbnailPathForVideo(path) {
++        if (!path)
++            return "";
++        const fileName = String(path).substring(String(path).lastIndexOf('/') + 1);
++        return expandHome("~") + "/Pictures/Wallpapers/" + fileName + ".jpg";
++    }
++
++    function setBuiltInWallpaperDisabled(disabled) {
++        const prefs = SettingsData.screenPreferences || {};
++        const updated = Object.assign({}, prefs);
++        updated.wallpaper = disabled ? [] : ["all"];
++        SettingsData.set("screenPreferences", updated);
++    }
++
+@@ -110 +156 @@
+-                    if (paths[i] === currentWallpaper) {
++                    if (pathsEqual(paths[i], currentWallpaper)) {
+@@ -185,0 +232,2 @@
++        if (liveVideoPath)
++            return thumbnailPathForVideo(liveVideoPath);
+@@ -192,0 +241,11 @@
++        if (isLiveWallpaperThumbnail(path)) {
++            const videoPath = videoPathForThumbnail(path);
++            liveVideoPath = videoPath;
++            setBuiltInWallpaperDisabled(true);
++            PluginService.savePluginData("liveWallpaper", "videoPath", videoPath);
++            return;
++        }
++
++        liveVideoPath = "";
++        PluginService.savePluginData("liveWallpaper", "videoPath", "");
++        setBuiltInWallpaperDisabled(false);
+@@ -232,0 +292,11 @@
++    Connections {
++        target: PluginService
++        function onPluginDataChanged(pluginId) {
++            if (pluginId !== "liveWallpaper")
++                return;
++            root.liveVideoPath = root.expandHome(SettingsData.getPluginSetting("liveWallpaper", "videoPath", ""));
++            if (root.visible && root.active)
++                root.setInitialSelection();
++        }
++    }
++
+@@ -403 +473 @@
+-            if (filePath === currentWallpaper) {
++            if (pathsEqual(filePath, currentWallpaper)) {
+@@ -687 +757 @@
+-                        property bool isSelected: getCurrentWallpaper() === modelData
++                        property bool isSelected: pathsEqual(getCurrentWallpaper(), modelData)
+@@ -727,0 +798,19 @@
++                                }
++                            }
++
++                            Rectangle {
++                                anchors.top: parent.top
++                                anchors.right: parent.right
++                                anchors.margins: Theme.spacingS
++                                width: 26
++                                height: 26
++                                radius: 13
++                                color: Theme.primary
++                                visible: isSelected
++                                z: 4
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: "check"
++                                    size: 18
++                                    color: Theme.onPrimary

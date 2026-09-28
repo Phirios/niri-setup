@@ -58,3 +58,7 @@ function isCovered(workspaces, output, inOverview) {
 function pauseCommand(paused) {
     return JSON.stringify({command: ["set_property", "pause", paused]}) + "\n";
 }
+
+function loadCommand(videoPath) {
+    return JSON.stringify({command: ["loadfile", videoPath, "replace"]}) + "\n";
+}

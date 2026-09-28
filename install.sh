@@ -21,7 +21,7 @@ TERMINAL="kitty"
 DMS_COPR="avengemedia/dms"
 PACKAGES=(
   niri xwayland-satellite xdg-desktop-portal-gnome "$TERMINAL"
-  git cargo python3 jq
+  git cargo python3 jq patch
   dbus-devel pkgconf-pkg-config
   gtk3 xdg-utils libnotify playerctl wl-clipboard procps-ng
 )
@@ -125,6 +125,9 @@ setup_niri() {
   install -m644 "$ROOT/niri/custom/apps.kdl" "$NIRI_DIR/custom/apps.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m755 "$ROOT/niri/scripts/dms-run.sh" "$NIRI_DIR/scripts/dms-run.sh"
+  install -m644 "$ROOT/niri/scripts/dms-wallpaper-picker.patch" "$NIRI_DIR/scripts/dms-wallpaper-picker.patch"
+  install -Dm755 "$ROOT/niri/scripts/dms-live-wallpaper-thumbnails" \
+    "$HOME/.local/bin/dms-live-wallpaper-thumbnails"
   install -m755 "$ROOT/niri/scripts/grid.py" "$NIRI_DIR/scripts/grid.py"
   # Start DMS from a patched copy of its UI; see the script for the patch.
   sed -i 's|^spawn-at-startup "dms" "run"$|spawn-at-startup "sh" "-c" "exec ~/.config/niri/scripts/dms-run.sh"|' \

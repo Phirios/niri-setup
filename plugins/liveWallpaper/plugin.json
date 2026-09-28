@@ -9,5 +9,5 @@
     "component": "./LiveWallpaperDaemon.qml",
     "icon": "movie",
     "settings": "./LiveWallpaperSettings.qml",
-    "permissions": ["settings_read", "settings_write"]
+    "permissions": ["settings_read", "settings_write", "process"]
 }
