@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Arranges the tiled windows on the focused workspace into a grid: columns of two windows
-# stacked on top of each other, each column half the screen wide. Four windows make a 2x2.
+# Arranges the tiled windows on the focused workspace into a grid that fills the screen
+# exactly: 2 windows side by side, 4 as 2x2, 6 as 3x2, 9 as 3x3. Every window is on screen.
 set -euo pipefail
 
-COLUMN_WIDTH="50%"
 MAX_EXPELS=32
 
 act() { niri msg action "$@" >/dev/null; }
@@ -30,20 +29,29 @@ for ((i = 0; i < MAX_EXPELS; i++)); do
 done
 
 mapfile -t ids < <(tiled_windows | awk '{ print $3 }')
-[[ ${#ids[@]} -ge 2 ]] || exit 0
+count=${#ids[@]}
+[[ $count -ge 1 ]] || exit 0
 
-# 2. Every second window joins the column on its left.
-for ((i = 1; i < ${#ids[@]}; i += 2)); do
+# 2. As many columns as rows or one more: ceil(sqrt(n)) columns of ceil(n / columns) windows.
+columns=1
+while ((columns * columns < count)); do ((columns++)); done
+rows=$(((count + columns - 1) / columns))
+width="$(awk -v c="$columns" 'BEGIN { printf "%.4f%%", 100 / c }')"
+
+# 3. Each window that does not start a column joins the column on its left.
+for ((i = 0; i < count; i++)); do
+  ((i % rows == 0)) && continue
   act focus-window --id "${ids[i]}"
   act consume-or-expel-window-left
 done
 
-# 3. Half-width columns, windows sharing each column's height equally.
-for ((i = 0; i < ${#ids[@]}; i++)); do
+# 4. Columns share the screen width, windows share each column's height.
+for ((i = 0; i < count; i++)); do
   act focus-window --id "${ids[i]}"
   act reset-window-height
-  ((i % 2 == 0)) && act set-column-width "$COLUMN_WIDTH"
+  ((i % rows == 0)) && act set-column-width "$width"
 done
 
 act focus-window --id "${ids[0]}"
+act focus-column-first
 [[ -z "$original" ]] || act focus-window --id "$original"
