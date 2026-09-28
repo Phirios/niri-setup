@@ -252,8 +252,8 @@ PluginComponent {
                 active: LiveService.privacyOn
                 title: LiveService.privacyOn ? "Private surfaces are hidden" : "Everything is visible"
                 detail: LiveService.privacyOn
-                    ? "Chat, notifications, clipboard and password prompts show as black. Stays set after the share."
-                    : "Viewers see the AI chat, notifications and clipboard too"
+                    ? "The AI chat, notification popups and password prompts show as black. Stays set after the share."
+                    : "Viewers see the AI chat and notification popups too"
                 toggleAction: on => LiveService.setPrivacy(on)
             }
         }

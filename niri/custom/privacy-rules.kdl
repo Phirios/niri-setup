@@ -1,11 +1,17 @@
 // Hidden from screen shares and recordings. You still see these on your own screen;
 // viewers see a black rectangle in their place. Screenshots are not affected.
 
-// Shell surfaces that can show private text.
+// Shell surfaces that can show private text. Niri blacks out a whole surface, so only
+// surfaces sized to their content belong here: the notification center and clipboard
+// history cover the entire screen while open, and hiding them blacks out everything.
 layer-rule {
     match namespace="^dms:agent$"
-    match namespace="^dms:notification"
-    match namespace="^dms:clipboard"
+    match namespace="^dms:notification-popup$"
+    block-out-from "screencast"
+}
+
+// Password dialogs also cover the whole screen, but only for the moment a password is typed.
+layer-rule {
     match namespace="^dms:wifi-"
     match namespace="^dms:polkit-auth-surface$"
     block-out-from "screencast"
