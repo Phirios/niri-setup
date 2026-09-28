@@ -13,7 +13,7 @@ so KDE or GNOME is one logout away.
 ```bash
 git clone https://github.com/firatege/niri-setup
 cd niri-setup
-./install.sh
+./install.sh --profile yourname    # or without --profile for the shared setup only
 ```
 
 Then log out, pick **niri** in the session menu of the login screen, and log in.
@@ -108,12 +108,18 @@ Each monitor plays only while its workspace is empty or the overview is open, wh
 wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The
 still wallpaper stays underneath.
 
-## Apps and workspaces
+## Personal profiles
 
-`~/.config/niri/custom/apps.kdl` decides where windows open. Two named workspaces, `chat` and
-`media`, live on the laptop screen (`eDP-1`); games open fullscreen on `HDMI-A-1`, the port wired
-to the NVIDIA card on the machine this was written on. Run `niri msg outputs` to see your own
-names. When a named output is missing, niri uses another one, so nothing breaks.
+Everything is shared except what sits in `profiles/<name>/`: extra shortcuts, where apps open,
+and settings such as the wallpaper video or idle timeouts. Pick yours when installing:
+
+```bash
+./install.sh --profile firat
+```
+
+`profiles/firat/apps.kdl` is an example: two named workspaces, `chat` and `media`, on the laptop
+screen (`eDP-1`), and games fullscreen on `HDMI-A-1`. Output names depend on the machine; run
+`niri msg outputs`. See [profiles/README.md](profiles/README.md) for what each file does.
 
 ## Steam and the NVIDIA card
 

@@ -105,6 +105,34 @@ def merge_plugin_settings(current, wallpaper=None, voice=False):
     }
 
 
+def without_comments(values):
+    """Profile files may carry "_comment" keys for the people editing them."""
+    return {key: value for key, value in values.items() if not key.startswith("_")}
+
+
+def apply_profile_shell(current, profile):
+    """A profile's shell.json: top-level DMS settings, plus "bar" for the main bar's settings."""
+    profile = without_comments(profile)
+    bar = without_comments(profile.pop("bar", {}))
+    merged = {**current, **profile}
+    bars = merged.get("barConfigs")
+    if not bar:
+        return merged
+    if not bars:
+        # No bar yet: DMS builds the first one from dankBar* keys, e.g. transparency -> dankBarTransparency.
+        return {**merged, **{"dankBar" + key[0].upper() + key[1:]: value for key, value in bar.items()}}
+    return {**merged, "barConfigs": [{**bars[0], **bar}, *bars[1:]]}
+
+
+def apply_profile_plugins(current, profile):
+    """A profile's plugins.json: settings per plugin id, merged into what is there."""
+    profile = without_comments(profile)
+    return {
+        **current,
+        **{plugin: {**current.get(plugin, {}), **without_comments(values)} for plugin, values in profile.items()},
+    }
+
+
 def read_json(path):
     if not path.exists():
         return {}
@@ -133,6 +161,7 @@ def main(argv):
     parser.add_argument("--theme-file", required=True, type=Path, help="installed location of ink.json")
     parser.add_argument("--wallpaper", type=Path, help="video for the live wallpaper")
     parser.add_argument("--voice", action="store_true", help="switch on voice input in the chat panel")
+    parser.add_argument("--profile-dir", type=Path, help="personal profile with shell.json and plugins.json")
     args = parser.parse_args(argv)
 
     if not args.theme_file.is_file():
@@ -142,9 +171,18 @@ def main(argv):
 
     settings_path = args.config_dir / "settings.json"
     plugins_path = args.config_dir / "plugin_settings.json"
-    write_json(settings_path, merge_shell_settings(read_json(settings_path), str(args.theme_file)), stamp)
+    profile_shell = read_json(args.profile_dir / "shell.json") if args.profile_dir else {}
+    profile_plugins = read_json(args.profile_dir / "plugins.json") if args.profile_dir else {}
+
+    shell = merge_shell_settings(read_json(settings_path), str(args.theme_file))
+    write_json(settings_path, apply_profile_shell(shell, profile_shell), stamp)
     wallpaper = str(args.wallpaper) if args.wallpaper else None
-    write_json(plugins_path, merge_plugin_settings(read_json(plugins_path), wallpaper, args.voice), stamp)
+    plugins = merge_plugin_settings(read_json(plugins_path), wallpaper, args.voice)
+    plugins = apply_profile_plugins(plugins, profile_plugins)
+    if wallpaper:
+        # A video given on the command line beats the one in the profile.
+        plugins = apply_profile_plugins(plugins, {"liveWallpaper": {"videoPath": wallpaper}})
+    write_json(plugins_path, plugins, stamp)
 
 
 if __name__ == "__main__":

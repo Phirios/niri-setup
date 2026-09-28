@@ -5,7 +5,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from apply_settings import merge_plugin_settings, merge_shell_settings  # noqa: E402
+from apply_settings import (  # noqa: E402
+    apply_profile_plugins,
+    apply_profile_shell,
+    merge_plugin_settings,
+    merge_shell_settings,
+)
 
 THEME = "/home/someone/.config/DankMaterialShell/themes/ink.json"
 
@@ -143,6 +148,52 @@ class PluginSettingsTest(unittest.TestCase):
 
         self.assertTrue(merged["dmsAgent"]["voiceEnabled"])
         self.assertFalse(merged["dmsAgent"]["autoUpdate"])
+
+
+
+class ProfileTest(unittest.TestCase):
+    BASE = {"cornerRadius": 16, "barConfigs": [{"id": "default", "transparency": 0.7, "rightWidgets": ["clock"]}]}
+
+    def test_an_empty_profile_changes_nothing(self):
+        self.assertEqual(apply_profile_shell(self.BASE, {}), self.BASE)
+        self.assertEqual(apply_profile_plugins({"liveMode": {"enabled": True}}, {}), {"liveMode": {"enabled": True}})
+
+    def test_profile_values_win_over_the_shared_ones(self):
+        merged = apply_profile_shell(self.BASE, {"cornerRadius": 8, "acLockTimeout": 600})
+
+        self.assertEqual(merged["cornerRadius"], 8)
+        self.assertEqual(merged["acLockTimeout"], 600)
+
+    def test_bar_values_go_into_the_main_bar_and_keep_the_rest_of_it(self):
+        merged = apply_profile_shell(self.BASE, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(merged["barConfigs"][0]["transparency"], 1.0)
+        self.assertEqual(merged["barConfigs"][0]["rightWidgets"], ["clock"])
+        self.assertNotIn("bar", merged)
+
+    def test_bar_values_before_any_bar_exists_use_the_migration_keys(self):
+        merged = apply_profile_shell({"dankBarTransparency": 0.7}, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(merged["dankBarTransparency"], 1.0)
+        self.assertNotIn("barConfigs", merged)
+
+    def test_plugin_values_are_merged_per_plugin(self):
+        current = {"liveWallpaper": {"enabled": True, "videoPath": "", "stopOnBattery": True}}
+
+        merged = apply_profile_plugins(current, {"liveWallpaper": {"videoPath": "~/v.webm"}})
+
+        self.assertEqual(merged["liveWallpaper"], {"enabled": True, "videoPath": "~/v.webm", "stopOnBattery": True})
+
+    def test_comment_keys_in_profile_files_are_ignored(self):
+        merged = apply_profile_shell(self.BASE, {"_comment": "notes for people", "bar": {"_comment": "x"}})
+
+        self.assertEqual(merged, self.BASE)
+
+    def test_inputs_are_not_modified(self):
+        base = {"barConfigs": [{"id": "default", "transparency": 0.7}]}
+        apply_profile_shell(base, {"bar": {"transparency": 1.0}})
+
+        self.assertEqual(base, {"barConfigs": [{"id": "default", "transparency": 0.7}]})
 
 
 if __name__ == "__main__":

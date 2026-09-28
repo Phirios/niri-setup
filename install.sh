@@ -8,6 +8,7 @@
 #   ./install.sh --skip-packages     configuration only (niri and dms are already installed)
 #   ./install.sh --voice             also set up voice input for the AI chat (local Whisper, 1-3 GB)
 #   ./install.sh --gaming            also apply the gaming tweaks in system/ (asks for sudo)
+#   ./install.sh --profile NAME      also apply your personal settings from profiles/NAME
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,7 +49,9 @@ NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
   'include optional=true "custom/privacy.kdl"'
   'include optional=true "dms-ai-agent.kdl"'
-  'include optional=true "custom/apps.kdl"'
+  # A personal profile, loaded last so its keys replace the shared ones; see profiles/README.md.
+  'include optional=true "profile/apps.kdl"'
+  'include optional=true "profile/binds.kdl"'
 )
 
 # Whisper for the chat panel's mic button; the same path the plugin's voice.py looks in.
@@ -122,7 +125,17 @@ setup_niri() {
   # The switch that live mode flips; a re-run keeps whatever it was set to.
   [[ -e "$NIRI_DIR/custom/privacy.kdl" ]] && grep -q "Live Mode plugin" "$NIRI_DIR/custom/privacy.kdl" \
     || install -m644 "$ROOT/niri/custom/privacy.kdl" "$NIRI_DIR/custom/privacy.kdl"
-  install -m644 "$ROOT/niri/custom/apps.kdl" "$NIRI_DIR/custom/apps.kdl"
+  # App placement moved into the profiles; an old shared copy would repeat the workspaces.
+  rm -f "$NIRI_DIR/custom/apps.kdl"
+  rm -rf "$NIRI_DIR/profile"
+  if [[ -n "$PROFILE_DIR" ]]; then
+    mkdir -p "$NIRI_DIR/profile"
+    local file
+    for file in binds.kdl apps.kdl; do
+      [[ -f "$PROFILE_DIR/$file" ]] && install -m644 "$PROFILE_DIR/$file" "$NIRI_DIR/profile/$file"
+    done
+    printf '%s\n' "$(basename "$PROFILE_DIR")" > "$NIRI_DIR/profile/NAME"
+  fi
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m755 "$ROOT/niri/scripts/dms-run.sh" "$NIRI_DIR/scripts/dms-run.sh"
   install -m755 "$ROOT/niri/scripts/grid.py" "$NIRI_DIR/scripts/grid.py"
@@ -242,6 +255,7 @@ setup_shell() {
   local settings_args=()
   [[ -z "$WALLPAPER" ]] || settings_args=(--wallpaper "$WALLPAPER")
   [[ "$WITH_VOICE" -eq 0 ]] || settings_args+=(--voice)
+  [[ -z "$PROFILE_DIR" ]] || settings_args+=(--profile-dir "$PROFILE_DIR")
   python3 "$ROOT/lib/apply_settings.py" --config-dir "$DMS_DIR" --theme-file "$DMS_DIR/themes/ink.json" \
     "${settings_args[@]}"
 }
@@ -272,6 +286,7 @@ DONE
 
 main() {
   local skip_packages=0 wallpaper_source="" gaming=0
+  PROFILE_DIR=""
   WITH_VOICE=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -279,7 +294,11 @@ main() {
       --voice) WITH_VOICE=1 ;;
       --gaming) gaming=1 ;;
       --wallpaper) wallpaper_source="${2:?--wallpaper needs a video file}"; shift ;;
-      -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --profile)
+        PROFILE_DIR="$ROOT/profiles/${2:?--profile needs a name, e.g. --profile firat}"
+        [[ -d "$PROFILE_DIR" ]] || fail "no profile named $2 in $ROOT/profiles"
+        shift ;;
+      -h|--help) sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) fail "unknown option: $1" ;;
     esac
     shift

@@ -1,0 +1,6 @@
+// Piroz's shortcuts. Loaded after the shared ones, so a key defined here replaces the shared one.
+// Actions: https://niri-wm.github.io/niri/Configuration:-Key-Bindings.html
+binds {
+    // Example: open Dolphin with Super+E
+    // Mod+E { spawn "dolphin"; }
+}
