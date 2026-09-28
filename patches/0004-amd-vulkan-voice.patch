@@ -1,0 +1,307 @@
+diff --git a/AgentService.qml b/AgentService.qml
+index 9021875..a043e82 100644
+--- a/AgentService.qml
++++ b/AgentService.qml
+@@ -83,11 +83,10 @@ Singleton {
+     signal responseComplete()
+ 
+     // --- Voice input ---
+-    // pw-record writes a 16 kHz mono WAV; voice.py sends it to a local
+-    // faster-whisper server that keeps the model loaded between phrases.
++    // pw-record writes 16 kHz mono WAV chunks; voice.py transcribes them on
++    // the local AMD/Vulkan backend while the next chunk is being recorded.
+     // Stop uses SIGTERM: on SIGINT pw-record leaves a header-only file.
+-    // Recording is split into 2-minute chunks; each chunk is transcribed as
+-    // soon as it's ready, text is appended to the input field incrementally.
++    // Two-minute chunks match the original CUDA/faster-whisper workflow.
+     property string voiceState: "idle"    // idle | recording | transcribing
+     property int voiceSeconds: 0
+     property string voiceError: ""
+@@ -122,6 +121,8 @@ Singleton {
+         Process {
+             id: recProc
+             property string wavPath: ""
++            property int chunkIndex: 0
++            property bool transcribeOnExit: false
+             // "stream.capture.sink=true" attaches the stream to the monitor of the
+             // *current* output, so it follows a switch from speakers to headphones
+             // on its own — no need to look the device up.
+@@ -133,6 +134,9 @@ Singleton {
+             }
+             stderr: StdioCollector {}
+             onExited: {
++                // pw-record has finalized the WAV header at this point. Starting
++                // inference before onExited occasionally produced truncated files.
++                if (transcribeOnExit) root._enqueueChunk(wavPath, chunkIndex);
+                 if (root._recProcess === recProc) root._onRecordingExited();
+                 recProc.destroy();
+             }
+@@ -172,23 +176,21 @@ Singleton {
+ 
+     function _startChunk() {
+         var chunkPath = voiceWav + "-" + voiceChunkIndex;
+-        var p = recRunner.createObject(root, { wavPath: chunkPath });
++        var p = recRunner.createObject(root, { wavPath: chunkPath, chunkIndex: voiceChunkIndex });
+         _recProcess = p;
+         p.running = true;
+     }
+ 
++    function _enqueueChunk(path, index) {
++        voiceChunkQueue = voiceChunkQueue.concat([{path: path, index: index}]);
++        if (!voiceTranscribing) _processNextChunk();
++    }
++
+     function _rotateChunk() {
+         if (!_recProcess) return;
+-        var currentPath = voiceWav + "-" + voiceChunkIndex;
+-        
+-        // Завершаем текущий процесс записи
+-        _recProcess.signal(15);
+-        
+-        // Добавляем в очередь транскрибации
+-        voiceChunkQueue = voiceChunkQueue.concat([{path: currentPath, index: voiceChunkIndex}]);
+-        
+-        // Запускаем обработку очереди, если она не идёт
+-        if (!voiceTranscribing) _processNextChunk();
++        var finished = _recProcess;
++        finished.transcribeOnExit = true;
++        finished.signal(15);
+         
+         // Следующий чанк
+         voiceChunkIndex += 1;
+@@ -199,20 +201,16 @@ Singleton {
+     function stopVoice() {
+         if (voiceState !== "recording" || !_recProcess) return;
+         
+-        // Финализируем последний чанк
+-        var currentPath = voiceWav + "-" + voiceChunkIndex;
+-        voiceChunkQueue = voiceChunkQueue.concat([{path: currentPath, index: voiceChunkIndex}]);
+-        
+-        _recProcess.signal(15);
++        // onExited queues the final chunk only after pw-record finalizes it.
++        _recProcess.transcribeOnExit = true;
+         voiceState = "transcribing";
+-        
+-        // Запускаем обработку очереди
+-        if (!voiceTranscribing) _processNextChunk();
++        _recProcess.signal(15);
+     }
+ 
+     function cancelVoice() {
+         if (voiceState !== "recording" || !_recProcess) return;
+         _recCancelled = true;
++        _recProcess.transcribeOnExit = false;
+         _recProcess.signal(15);
+     }
+ 
+diff --git a/DmsAgentChat.qml b/DmsAgentChat.qml
+index f8c3c66..3dd1adc 100644
+--- a/DmsAgentChat.qml
++++ b/DmsAgentChat.qml
+@@ -1115,7 +1115,7 @@ Item {
+             var currentText = inputField.text;
+             var sep = "";
+             if (currentText.length > 0) {
+-                sep = isFirstChunk ? "\n\n" : "\n";
++                sep = isFirstChunk ? "\n\n" : " ";
+             }
+             inputField.text = currentText + sep + text;
+             inputField.cursorPosition = inputField.text.length;
+diff --git a/DmsAgentSettings.qml b/DmsAgentSettings.qml
+index 545c168..70bddca 100644
+--- a/DmsAgentSettings.qml
++++ b/DmsAgentSettings.qml
+@@ -209,13 +209,13 @@ PluginSettings {
+                 SelectionSetting {
+                     settingKey: "voiceModel"
+                     label: "Whisper Model"
+-                    description: "Auto: large-v3-turbo with an NVIDIA GPU, small on CPU. Downloaded on first use."
++                    description: "Auto: Small on AMD/Vulkan or CPU; large-v3-turbo on NVIDIA/CUDA. Downloaded on first use."
+                     defaultValue: "auto"
+                     options: [
+                         { label: "Auto", value: "auto" },
+                         { label: "large-v3-turbo (GPU)", value: "large-v3-turbo" },
+                         { label: "medium", value: "medium" },
+-                        { label: "small", value: "small" },
++                        { label: "small (AMD GPU / CPU)", value: "small" },
+                         { label: "base (fastest)", value: "base" }
+                     ]
+                 }
+diff --git a/README.md b/README.md
+index 86a1dc8..b9c64f9 100644
+--- a/README.md
++++ b/README.md
+@@ -119,14 +119,15 @@ a typo never breaks your running config. On other compositors, bind
+ 
+ ### Voice input
+ 
+-Click the mic, speak, click again: the text is inserted at the cursor so you can fix it before
+-sending. `Esc` cancels. Recording continues in 2-minute chunks; each chunk is transcribed in the
+-background and its text is appended to the input field. Stop recording manually, or let it
+-continue as long as needed.
+-
+-Speech is recognized locally by [faster-whisper](https://github.com/SYSTRAN/faster-whisper). The
+-model is loaded by a small background server on first use and unloaded after 10 idle minutes, so
+-the first phrase takes a couple of seconds and the next ones are near-instant. Logs:
++Click the mic and speak. Click again to stop and transcribe the current phrase; `Esc` cancels.
++For continuous recording, completed two-minute chunks are transcribed on the local GPU and
++appended while the next chunk records. You can fix the accumulated text before sending.
++
++Speech is recognized locally. The default backend is
++[faster-whisper](https://github.com/SYSTRAN/faster-whisper); when the user-local
++[whisper.cpp](https://github.com/ggml-org/whisper.cpp) Vulkan build and a matching GGML model are
++present, it is selected first so AMD GPUs can accelerate transcription. CPU/int8 remains the
++fallback. The background server exits after 10 idle minutes. Logs:
+ `$XDG_RUNTIME_DIR/dms-agent-voice.log`.
+ 
+ ### Transcribing what you hear
+diff --git a/voice.py b/voice.py
+index f945fc6..c7c42c9 100644
+--- a/voice.py
++++ b/voice.py
+@@ -1,19 +1,19 @@
+ #!/usr/bin/env python3
+-"""Speech-to-text for DMS Agent's mic button, via local faster-whisper.
++"""Speech-to-text for DMS Agent's mic button, via local Whisper inference.
+ 
+     voice.py transcribe <file.wav>   print {"text": ...} or {"error": ...} as JSON
+     voice.py serve                   run the model server (started on demand)
+ 
+-Loading the model takes seconds, so it is kept in a small background server
+-that listens on a UNIX socket and exits on its own after IDLE_SECONDS without
+-requests. `transcribe` is the client: it starts the server when it is not
+-running and waits until the model is loaded. The client needs only the
+-standard library; the server runs in the whisper venv (install.sh creates it).
++The small background server serializes recorded chunks over a UNIX socket and
++exits after IDLE_SECONDS without requests. On AMD it invokes the installed
++whisper.cpp Vulkan backend; faster-whisper remains the CUDA/CPU fallback.
+ 
+ Configuration comes from the plugin settings via environment variables:
+     DMS_AGENT_WHISPER_VENV    venv with faster-whisper
+-    DMS_AGENT_WHISPER_MODEL   "auto" (GPU: large-v3-turbo, CPU: small) or a model name
++    DMS_AGENT_WHISPER_MODEL   "auto" or a model name
+     DMS_AGENT_WHISPER_LANG    "auto" or a language code such as "en", "ru"
++    DMS_AGENT_WHISPER_CPP     optional path to the Vulkan whisper-cli
++    DMS_AGENT_WHISPER_CPP_MODELS optional directory containing ggml-*.bin
+ """
+ 
+ import fcntl
+@@ -23,17 +23,28 @@ import socket
+ import subprocess
+ import sys
+ import time
++from types import SimpleNamespace
+ 
+ DEFAULT_VENV = "~/.local/share/dms-ai-agent/whisper-venv"
+ VENV = os.path.expanduser(os.environ.get("DMS_AGENT_WHISPER_VENV") or DEFAULT_VENV)
+ MODEL = os.environ.get("DMS_AGENT_WHISPER_MODEL") or "auto"
+ LANGUAGE = os.environ.get("DMS_AGENT_WHISPER_LANG") or "auto"
+-# Model picked for "auto": the large one is only fast enough on a GPU.
++# CUDA auto uses the larger model; Vulkan auto uses the installed small model.
+ AUTO_GPU_MODEL = "large-v3-turbo"
+ AUTO_CPU_MODEL = "small"
+ IDLE_SECONDS = int(os.environ.get("DMS_AGENT_WHISPER_IDLE", "600"))
+ STARTUP_TIMEOUT = 90
+ 
++DATA_DIR = os.path.expanduser(os.environ.get("DMS_AGENT_DATA_DIR") or "~/.local/share/dms-ai-agent")
++WHISPER_CPP = os.path.expanduser(
++    os.environ.get("DMS_AGENT_WHISPER_CPP")
++    or os.path.join(DATA_DIR, "whisper.cpp", "build-vulkan", "bin", "whisper-cli")
++)
++WHISPER_CPP_MODELS = os.path.expanduser(
++    os.environ.get("DMS_AGENT_WHISPER_CPP_MODELS")
++    or os.path.join(DATA_DIR, "models")
++)
++
+ RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/dms-agent-{os.getuid()}"
+ SOCKET_PATH = os.path.join(RUNTIME, "dms-agent-voice.sock")
+ LOCK_PATH = os.path.join(RUNTIME, "dms-agent-voice.lock")
+@@ -60,8 +71,87 @@ def cuda_env():
+ 
+ # --- server -------------------------------------------------------------------
+ 
++class WhisperCppModel:
++    """AMD/cross-vendor GPU transcription through whisper.cpp's Vulkan backend."""
++
++    def __init__(self, model_path, model_name):
++        self.model_path = model_path
++        self.model_name = model_name
++        self.cpu_model = None
++        self.prompt = ""
++
++    def _cpu_fallback(self, path, language, **options):
++        if self.cpu_model is None:
++            from faster_whisper import WhisperModel
++            print("Vulkan transcription unavailable; loading CPU/int8 fallback", file=sys.stderr, flush=True)
++            self.cpu_model = WhisperModel(self.model_name, device="cpu", compute_type="int8")
++        if self.prompt:
++            options["initial_prompt"] = self.prompt
++        return self.cpu_model.transcribe(path, language=language, **options)
++
++    def transcribe(self, path, language=None, **options):
++        command = [
++            WHISPER_CPP,
++            "--model", self.model_path,
++            "--file", path,
++            "--device", "0",
++            "--language", language or "auto",
++            "--no-timestamps",
++        ]
++        if self.prompt:
++            command.extend(["--prompt", self.prompt])
++        try:
++            result = subprocess.run(command, capture_output=True, text=True, timeout=120)
++            if result.returncode != 0:
++                detail = result.stderr.strip().splitlines()
++                raise RuntimeError(detail[-1] if detail else f"whisper.cpp exited {result.returncode}")
++
++            # Keep decisive backend evidence in the voice log without copying
++            # all model and timing output for every recorded chunk.
++            for line in result.stderr.splitlines():
++                if "ggml_vulkan: 0 =" in line or "using Vulkan0 backend" in line:
++                    print(line, file=sys.stderr, flush=True)
++            text = result.stdout.strip()
++            if text:
++                # Give the next short chunk enough context to continue names and
++                # sentence structure across the recording boundary.
++                self.prompt = (self.prompt + " " + text).strip()[-240:]
++            return [SimpleNamespace(text=text)] if text else [], None
++        except Exception as error:
++            print(f"Vulkan transcription failed ({error})", file=sys.stderr, flush=True)
++            return self._cpu_fallback(path, language, **options)
++
++
++def whisper_cpp_model(spec):
++    """Return the installed Vulkan model, preferring the requested size."""
++    if not os.path.isfile(WHISPER_CPP) or not os.access(WHISPER_CPP, os.X_OK):
++        return None
++
++    requested = AUTO_CPU_MODEL if spec == "auto" else spec
++    candidates = [
++        (requested, os.path.join(WHISPER_CPP_MODELS, f"ggml-{requested}.bin")),
++        (AUTO_CPU_MODEL, os.path.join(WHISPER_CPP_MODELS, f"ggml-{AUTO_CPU_MODEL}.bin")),
++    ]
++    for name, path in candidates:
++        if os.path.isfile(path):
++            if name != requested:
++                print(f"Vulkan model {requested} is not installed; using {name}", file=sys.stderr, flush=True)
++            return WhisperCppModel(path, name), name
++    return None
++
+ def load_model(spec):
++    vulkan = whisper_cpp_model(spec)
++    if vulkan is not None:
++        model, name = vulkan
++        return model, f"{name} (AMD Vulkan)"
++
+     from faster_whisper import WhisperModel
++    # CTranslate2's GPU backend is CUDA-only. If the Vulkan backend is absent,
++    # non-NVIDIA systems use the compatible CPU/int8 fallback directly.
++    has_nvidia = os.path.exists("/dev/nvidiactl") or os.path.exists("/proc/driver/nvidia/version")
++    if not has_nvidia:
++        name = AUTO_CPU_MODEL if spec == "auto" else spec
++        return WhisperModel(name, device="cpu", compute_type="int8"), name
+     try:
+         name = AUTO_GPU_MODEL if spec == "auto" else spec
+         return WhisperModel(name, device="cuda", compute_type="float16"), name
+

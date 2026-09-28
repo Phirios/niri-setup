@@ -25,7 +25,7 @@ Two parts are opt-in:
 
 | Option | Adds |
 |--------|------|
-| `--voice` | Voice input for the chat panel: a local Whisper model, 1 to 3 GB, see below |
+| `--voice` | Local Whisper voice input, including the Vulkan backend/model for AMD GPUs, see below |
 | `--gaming` | The tweaks in `system/`: gamemode, no core dumps, a throttled file indexer |
 
 ## What it does
@@ -167,9 +167,12 @@ back.
 
 **Voice input** is off unless you install with `--voice`. That sets up
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) in
-`~/.local/share/dms-ai-agent/whisper-venv` and downloads a model: `large-v3-turbo` on an
-NVIDIA card, `small` on the CPU. Speech is turned into text on your machine. Running the
-installer again without `--voice` switches voice input off again.
+`~/.local/share/dms-ai-agent/whisper-venv` and builds a pinned
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp) Vulkan backend. AMD/Vulkan systems use
+the local `small` GGML model; NVIDIA uses CUDA with `large-v3-turbo`, and CPU remains the
+fallback. The mic records in two-minute chunks and appends each transcript as it becomes
+available. Speech is turned into text on your machine. Running the installer again without
+`--voice` switches voice input off again.
 
 ## Undo
 

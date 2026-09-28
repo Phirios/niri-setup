@@ -53,6 +53,8 @@ NIRI_INCLUDES=(
 
 # Whisper for the chat panel's mic button; the same path the plugin's voice.py looks in.
 VOICE_VENV="$DATA_HOME/dms-ai-agent/whisper-venv"
+VOICE_CPP_DIR="$HOME/.local/share/dms-ai-agent/whisper.cpp"
+VOICE_CPP_COMMIT="d09f61a708f3487afa956ff578e60eae5e7a233c"
 
 step() { printf '\n==> %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -175,7 +177,7 @@ install_agent() {
     git -C "$AGENT_DIR" apply --index "$patch" || fail "could not apply $(basename "$patch")"
   done
   git -C "$AGENT_DIR" -c user.name="niri-setup" -c user.email="niri-setup@localhost" \
-    commit --quiet --message "Apply niri-setup patches: allowlist, no auto-update, accent rim"
+    commit --quiet --message "Apply niri-setup patches: allowlist, no auto-update, accent rim, AMD voice"
   chmod +x "$AGENT_DIR"/*.sh
   note "installed at $AGENT_DIR (branch hardened)"
 
@@ -229,6 +231,24 @@ setup_voice() {
   note "downloading the Whisper model $model (one time)"
   "$python" -c "from faster_whisper import download_model; download_model('$model')" >/dev/null \
     || note "model download failed; it is retried the first time you use the mic"
+
+  # whisper.cpp's Vulkan backend provides GPU acceleration on AMD (and other
+  # Vulkan-capable GPUs); faster-whisper remains the CUDA/CPU fallback.
+  step "Building the Vulkan Whisper backend"
+  sudo dnf install -y cmake gcc-c++ glslang vulkan-headers vulkan-loader-devel
+  if [[ ! -d "$VOICE_CPP_DIR/.git" ]]; then
+    mkdir -p "$(dirname "$VOICE_CPP_DIR")"
+    git clone --quiet https://github.com/ggml-org/whisper.cpp.git "$VOICE_CPP_DIR"
+  fi
+  git -C "$VOICE_CPP_DIR" checkout --quiet --detach "$VOICE_CPP_COMMIT"
+  cmake -S "$VOICE_CPP_DIR" -B "$VOICE_CPP_DIR/build-vulkan" \
+    -DGGML_VULKAN=1 -DCMAKE_BUILD_TYPE=Release
+  cmake --build "$VOICE_CPP_DIR/build-vulkan" --config Release -j "$(nproc)"
+  mkdir -p "$HOME/.local/share/dms-ai-agent/models"
+  if [[ ! -f "$HOME/.local/share/dms-ai-agent/models/ggml-small.bin" ]]; then
+    bash "$VOICE_CPP_DIR/models/download-ggml-model.sh" small \
+      "$HOME/.local/share/dms-ai-agent/models"
+  fi
 }
 
 setup_gaming() {
