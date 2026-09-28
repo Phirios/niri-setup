@@ -37,7 +37,7 @@ Two parts are opt-in:
 | Theme | `Ink`: near-black surfaces, `#d97757` accent, blur on, translucent bar and popups |
 | AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
-| Live wallpaper | A video wallpaper through mpvpaper, see below |
+| Live wallpaper | Seamlessly switching video wallpapers through Qt Multimedia, see below |
 | Tailscale | A full-width Control Center section with a taller device list, device owners and owner filtering |
 | AI chat panel | [dms-ai-agent](https://github.com/Cha1000000/dms-ai-agent) at a pinned commit, with the patches in `patches/` |
 | App placement | Discord and Slack on a `chat` workspace, Spotify on `media`, games fullscreen on the external monitor |
@@ -93,22 +93,24 @@ last for the share.
 
 ## Live wallpaper
 
-The installer builds [mpvpaper](https://github.com/GhostNaN/mpvpaper) into `~/.local/bin` and
-installs a plugin that plays a video as the wallpaper, one player per monitor. Give it a video
-when installing:
+The installer adds Qt Multimedia and a plugin that plays a video as the wallpaper, one active
+player per monitor. Give it a video when installing:
 
 ```bash
 ./install.sh --wallpaper ~/Downloads/some-loop.mp4
 ```
 
 or later in Settings > Plugins > Live Wallpaper. Videos that are not VP9 or AV1 are converted
-to VP9 on install, because on an Intel GPU those decode in hardware at about 3% of one core,
-while H.264 fell back to software and took a full core in testing.
+to VP9 on install. Hardware decoding depends on the graphics driver and Qt Multimedia backend.
 
 Videos in `~/Videos/Wallpapers` also appear as previews in DMS's normal Wallpapers tab.
-Selecting one there switches the running mpvpaper immediately; selecting a still image hands
+Selecting one there switches the running video immediately; selecting a still image hands
 the wallpaper back to DMS. The active video has a check badge. Preview images are generated at
 startup and linked into `~/Pictures/Wallpapers`, without copying the videos themselves.
+When switching videos, both clips keep moving during the transition: the old one blurs and
+fades away as the new one sharpens. The new clip keeps playing in the same player afterward,
+without restarting at the handoff. Existing mpvpaper installations are left untouched but are
+no longer used by this plugin.
 
 Each monitor plays only while its workspace is empty or the overview is open, which is when the
 wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The

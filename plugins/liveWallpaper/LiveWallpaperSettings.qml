@@ -11,7 +11,7 @@ PluginSettings {
     StringSetting {
         settingKey: "videoPath"
         label: "Video"
-        description: "A video file, or a folder of videos to play in turn. VP9 or AV1 decode on the GPU; H.264 may not."
+        description: "A video file. Playback and hardware decoding use Qt Multimedia."
         placeholder: "~/Videos/Wallpapers/loop.webm"
     }
 
@@ -34,12 +34,5 @@ PluginSettings {
         label: "Stop while gaming"
         description: "Stop while a Steam game or gamescope is running"
         defaultValue: true
-    }
-
-    StringSetting {
-        settingKey: "mpvpaperPath"
-        label: "mpvpaper path"
-        description: "Location of the mpvpaper binary; leave empty for ~/.local/bin/mpvpaper"
-        placeholder: "~/.local/bin/mpvpaper"
     }
 }

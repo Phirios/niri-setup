@@ -1,7 +1,7 @@
 {
     "id": "liveWallpaper",
     "name": "Live Wallpaper",
-    "description": "Plays a video as the wallpaper with mpvpaper, and stops on battery and while a game is running",
+    "description": "Plays seamless video wallpapers with Qt Multimedia, and stops on battery and while a game is running",
     "version": "1.0.0",
     "author": "firatege",
     "type": "daemon",

@@ -24,6 +24,7 @@ PACKAGES=(
   git cargo python3 jq patch
   dbus-devel pkgconf-pkg-config
   gtk3 xdg-utils libnotify playerctl wl-clipboard procps-ng
+  qt6-qtmultimedia ffmpeg-free
 )
 
 # The chat panel is pinned to the commit the patches in patches/ were written against.
@@ -38,11 +39,6 @@ LIMIT_BRANCH="feat/dms-plugin"
 LIMIT_SRC="$DATA_HOME/niri-setup/AILimitCounter"
 LOCAL_PLUGINS=(liveMode liveWallpaper)
 WALLPAPER_DIR="$HOME/Videos/Wallpapers"
-
-# mpvpaper plays the live wallpaper. Fedora does not package it, so it is built from this tag.
-MPVPAPER_REPO="https://github.com/GhostNaN/mpvpaper"
-MPVPAPER_TAG="1.9"
-MPVPAPER_BUILD_PACKAGES=(mpv mpv-devel meson ninja-build gcc wayland-devel wayland-protocols-devel mesa-libEGL-devel ffmpeg-free)
 
 NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
@@ -66,26 +62,9 @@ install_packages() {
   sudo dnf install -y "${PACKAGES[@]}"
   sudo dnf copr enable -y "$DMS_COPR"
   sudo dnf install -y dms
-  sudo dnf install -y "${MPVPAPER_BUILD_PACKAGES[@]}"
 }
 
-build_mpvpaper() {
-  step "Building mpvpaper for the live wallpaper"
-  if command -v mpvpaper >/dev/null || [[ -x "$HOME/.local/bin/mpvpaper" ]]; then
-    note "already installed"
-    return
-  fi
-  local build
-  build="$(mktemp -d)"
-  git clone --quiet --depth 1 --branch "$MPVPAPER_TAG" "$MPVPAPER_REPO" "$build/mpvpaper"
-  meson setup "$build/mpvpaper/build" "$build/mpvpaper" --buildtype=release >/dev/null
-  ninja -C "$build/mpvpaper/build" >/dev/null
-  install -Dm755 "$build/mpvpaper/build/mpvpaper" "$HOME/.local/bin/mpvpaper"
-  rm -rf "$build"
-  note "installed at $HOME/.local/bin/mpvpaper"
-}
-
-# VP9 decodes on the GPU; the H.264 most wallpaper sites ship took a full CPU core in testing.
+# Store a broadly supported, silent video for the wallpaper player.
 prepare_wallpaper() {
   local source="$1" target
   [[ -f "$source" ]] || fail "wallpaper not found: $source"
@@ -320,7 +299,6 @@ main() {
   setup_niri
   install_limit_counter
   install_agent
-  build_mpvpaper
   install_local_plugins
   WALLPAPER=""
   if [[ -n "$wallpaper_source" ]]; then

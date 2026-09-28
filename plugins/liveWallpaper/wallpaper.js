@@ -24,7 +24,7 @@ function decide(state) {
     if (!state.videoPath)
         return {run: false, reason: "No video chosen"};
     if (!mayRetry(state.failures))
-        return {run: false, reason: "mpvpaper keeps failing; check the video path, then save the settings again"};
+        return {run: false, reason: "Video playback keeps failing; check the video path, then save the settings again"};
     if (state.stopOnBattery && state.onBattery)
         return {run: false, reason: "Paused on battery"};
     if (state.stopWhileGaming && state.gaming)
