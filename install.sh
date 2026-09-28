@@ -44,6 +44,7 @@ WALLPAPER_DIR="$HOME/Videos/Wallpapers"
 NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
   'include optional=true "custom/privacy.kdl"'
+  'include optional=true "custom/wallpaper.kdl"'
   'include optional=true "dms-ai-agent.kdl"'
   # A personal profile, loaded last so its keys replace the shared ones; see profiles/README.md.
   'include optional=true "profile/apps.kdl"'
@@ -117,6 +118,7 @@ setup_niri() {
     done
     printf '%s\n' "$(basename "$PROFILE_DIR")" > "$NIRI_DIR/profile/NAME"
   fi
+  install -m644 "$ROOT/niri/custom/wallpaper.kdl" "$NIRI_DIR/custom/wallpaper.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m755 "$ROOT/niri/scripts/dms-run.sh" "$NIRI_DIR/scripts/dms-run.sh"
   install -m644 "$ROOT/niri/scripts/dms-wallpaper-picker.patch" "$NIRI_DIR/scripts/dms-wallpaper-picker.patch"
