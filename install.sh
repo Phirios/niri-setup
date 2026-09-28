@@ -45,6 +45,7 @@ MPVPAPER_BUILD_PACKAGES=(mpv mpv-devel meson ninja-build gcc wayland-devel wayla
 NIRI_INCLUDES=(
   'include optional=true "custom/binds.kdl"'
   'include optional=true "custom/privacy.kdl"'
+  'include optional=true "custom/wallpaper.kdl"'
   'include optional=true "dms-ai-agent.kdl"'
 )
 
@@ -113,6 +114,7 @@ setup_niri() {
   mkdir -p "$NIRI_DIR/custom" "$NIRI_DIR/scripts"
   install -m644 "$ROOT/niri/custom/binds.kdl" "$NIRI_DIR/custom/binds.kdl"
   install -m644 "$ROOT/niri/custom/privacy.kdl" "$NIRI_DIR/custom/privacy.kdl"
+  install -m644 "$ROOT/niri/custom/wallpaper.kdl" "$NIRI_DIR/custom/wallpaper.kdl"
   install -m755 "$ROOT/niri/scripts/show-desktop.sh" "$NIRI_DIR/scripts/show-desktop.sh"
   install -m644 "$ROOT/niri/dms-ai-agent.kdl" "$NIRI_DIR/dms-ai-agent.kdl"
 

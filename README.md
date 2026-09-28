@@ -82,7 +82,8 @@ while H.264 fell back to software and took a full core in testing.
 
 Each monitor plays only while its workspace is empty or the overview is open, which is when the
 wallpaper can be seen. It also stops on battery and while a Steam game or gamescope runs. The
-still wallpaper stays underneath.
+still wallpaper stays underneath. The installer places mpvpaper in niri's backdrop, so the video
+stays anchored to the monitor while workspaces animate over it.
 
 ## The chat panel and what it may do
 

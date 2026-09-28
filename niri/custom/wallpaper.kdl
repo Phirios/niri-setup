@@ -1,0 +1,7 @@
+// Keep mpvpaper anchored to the output while niri animates between workspaces.
+// DMS already gives the workspace view a transparent background, so the backdrop
+// remains visible instead of moving with each workspace.
+layer-rule {
+    match namespace="^mpvpaper$"
+    place-within-backdrop true
+}
