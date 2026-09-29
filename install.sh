@@ -124,6 +124,8 @@ setup_niri() {
   install -m644 "$ROOT/niri/scripts/dms-wallpaper-picker.patch" "$NIRI_DIR/scripts/dms-wallpaper-picker.patch"
   install -m644 "$ROOT/niri/scripts/dms-tailscale-control-center.patch" \
     "$NIRI_DIR/scripts/dms-tailscale-control-center.patch"
+  rm -rf "$NIRI_DIR/scripts/dms-ui-patches"
+  install -Dm644 -t "$NIRI_DIR/scripts/dms-ui-patches" "$ROOT"/niri/scripts/dms-ui-patches/*.patch
   install -Dm755 "$ROOT/niri/scripts/dms-live-wallpaper-thumbnails" \
     "$HOME/.local/bin/dms-live-wallpaper-thumbnails"
   install -m755 "$ROOT/niri/scripts/live-wallpaper-cycle.sh" "$NIRI_DIR/scripts/live-wallpaper-cycle.sh"

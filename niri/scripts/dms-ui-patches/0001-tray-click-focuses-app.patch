@@ -1,0 +1,73 @@
+--- a/Modules/DankBar/Widgets/SystemTrayBar.qml
++++ b/Modules/DankBar/Widgets/SystemTrayBar.qml
+@@ -2,6 +2,7 @@
+ import QtQuick.Effects
+ import QtQuick.Layouts
+ import Quickshell
++import Quickshell.Services.Mpris
+ import Quickshell.Services.SystemTray
+ import Quickshell.Wayland
+ import Quickshell.Widgets
+@@ -73,11 +74,34 @@
+         return "";
+     }
+ 
++    // Ayatana tray items (Steam, Spotify) ignore Activate, so a left click did nothing.
++    // Focus the app's open window first, then raise it through MPRIS, then fall back to Activate.
++    function trayAppKey(trayItem) {
++        return (trayItem?.id || trayItem?.title || "").toLowerCase().replace(/([-_]client|_status_icon_\d+)$/, "");
++    }
++
++    function activateTrayItem(trayItem) {
++        const key = root.trayAppKey(trayItem);
++        if (key) {
++            const win = NiriService.windows.find(w => (w.app_id || "").toLowerCase() === key);
++            if (win) {
++                NiriService.focusWindow(win.id);
++                return;
++            }
++            const player = Mpris.players.values.find(p => p.canRaise && ((p.desktopEntry || "").toLowerCase().includes(key) || (p.identity || "").toLowerCase() === key));
++            if (player) {
++                player.raise();
++                return;
++            }
++        }
++        trayItem.activate();
++    }
++
+     function activateInlineTrayItem(trayItem, anchorItem) {
+         if (!trayItem)
+             return;
+         if (!trayItem.onlyMenu) {
+-            trayItem.activate();
++            root.activateTrayItem(trayItem);
+             return;
+         }
+         if (!trayItem.hasMenu)
+@@ -605,7 +629,7 @@
+                             if (!delegateRoot.trayItem)
+                                 return;
+                             if (!delegateRoot.trayItem.onlyMenu) {
+-                                delegateRoot.trayItem.activate();
++                                root.activateTrayItem(delegateRoot.trayItem);
+                                 return;
+                             }
+                             if (!delegateRoot.trayItem.hasMenu)
+@@ -937,7 +961,7 @@
+                     if (!trayItem)
+                         return;
+                     if (!trayItem.onlyMenu) {
+-                        trayItem.activate();
++                        root.activateTrayItem(trayItem);
+                         return;
+                     }
+                     if (!trayItem.hasMenu)
+@@ -1479,7 +1503,7 @@
+                                     if (!trayItem)
+                                         return;
+                                     if (mouse.button === Qt.LeftButton && !trayItem.onlyMenu) {
+-                                        trayItem.activate();
++                                        root.activateTrayItem(trayItem);
+                                         root.menuOpen = false;
+                                         return;
+                                     }
