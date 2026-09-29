@@ -240,7 +240,7 @@ PluginComponent {
             PanelWindow {
                 id: wallpaperWindow
                 screen: player.modelData
-                WlrLayershell.layer: WlrLayer.Bottom
+                WlrLayershell.layer: WlrLayer.Background
                 WlrLayershell.namespace: "dms:live-wallpaper"
                 WlrLayershell.exclusionMode: ExclusionMode.Ignore
                 anchors.top: true
