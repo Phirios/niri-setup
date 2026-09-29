@@ -1,0 +1,9 @@
+// Firat's shortcuts. Loaded after the shared ones, so a key defined here replaces the shared one.
+binds {
+    // 60% keyboard, no Page Up/Down: up and down move between windows stacked in a column,
+    // and past the top or bottom window on to the next workspace.
+    Mod+Up         { focus-window-or-workspace-up; }
+    Mod+Down       { focus-window-or-workspace-down; }
+    Mod+Shift+Up   { move-window-up-or-to-workspace-up; }
+    Mod+Shift+Down { move-window-down-or-to-workspace-down; }
+}
