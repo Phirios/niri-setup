@@ -1,11 +1,12 @@
 # Profiles
 
 Everything outside this folder is shared. A profile holds only what one person wants
-different, and is applied on top of the shared setup:
+different, and is applied on top of the shared setup. Profiles live in each person's fork, not
+in this repository: copy `example/` to a folder with your name in your fork and edit it.
 
 ```bash
-./install.sh --profile firat
-./install.sh --profile piroz
+cp -r profiles/example profiles/<yourname>
+./install.sh --profile <yourname>
 ```
 
 Without `--profile` you get the shared setup alone. Each file in a profile is optional.
@@ -40,4 +41,6 @@ Code is shared, choices are personal.
   stops that file from getting updates. Put only the key or value that differs.
 - **No code in profiles.** When something needs logic, it goes into the shared setup with a
   setting that controls it, and the profile sets that setting.
-- **No branch or fork per person.** Shared fixes would have to be copied to each one.
+- **Shared changes go upstream.** A fix or feature made in your fork goes back to
+  `Auth-ism/niri-setup` as a pull request, without your profile folder in it, so everyone
+  gets it.

@@ -1,4 +1,4 @@
-// Where Piroz's apps open. Output names depend on the machine: run `niri msg outputs`.
+// Where Your apps open. Output names depend on the machine: run `niri msg outputs`.
 //
 // workspace "chat" {
 //     open-on-output "eDP-1"

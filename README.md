@@ -11,7 +11,7 @@ so KDE or GNOME is one logout away.
 ## Install
 
 ```bash
-git clone https://github.com/firatege/niri-setup
+git clone https://github.com/<you>/niri-setup      # your fork, see "Personal profiles"
 cd niri-setup
 ./install.sh --profile yourname    # or without --profile for the shared setup only
 ```
@@ -35,7 +35,7 @@ Two parts are opt-in:
 | Packages | `niri`, `xwayland-satellite`, `kitty`, `dms` (from the `avengemedia/dms` COPR) and the tools the plugins call |
 | niri config | The DMS default config, with `kitty` as terminal, plus two keybinds of our own |
 | Theme | `Ink`: near-black surfaces, `#d97757` accent, blur on, translucent bar and popups |
-| AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
+| AI Limit Counter | Clones [AILimitCounter](https://github.com/Phirios/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
 | Live mode | A `LIVE` pill in the bar while your screen is shared, see below |
 | Live wallpaper | Seamlessly switching video wallpapers through Qt Multimedia, see below |
 | Tailscale | A full-width Control Center section with a taller device list, device owners and owner filtering |
@@ -118,16 +118,19 @@ still wallpaper stays underneath.
 
 ## Personal profiles
 
-Everything is shared except what sits in `profiles/<name>/`: extra shortcuts, where apps open,
-and settings such as the wallpaper video or idle timeouts. Pick yours when installing:
+This repository holds only the shared setup. Everyone forks it and keeps their own profile in
+their fork: extra shortcuts, where apps open, and settings such as the wallpaper video or idle
+timeouts.
 
 ```bash
-./install.sh --profile firat
+gh repo fork Auth-ism/niri-setup --clone && cd niri-setup
+cp -r profiles/example profiles/<yourname>     # edit the files, commit, push to your fork
+./install.sh --profile <yourname>
 ```
 
-`profiles/firat/apps.kdl` is an example: two named workspaces, `chat` and `media`, on the laptop
-screen (`eDP-1`), and games fullscreen on `HDMI-A-1`. Output names depend on the machine; run
-`niri msg outputs`. See [profiles/README.md](profiles/README.md) for what each file does.
+To get shared updates, pull from this repository (`git pull upstream main`) and run the
+installer again. Shared improvements go back here as pull requests; profiles stay in forks.
+See [profiles/README.md](profiles/README.md) for what each file does.
 
 ## Steam and the NVIDIA card
 

@@ -35,7 +35,7 @@ AGENT_DIR="$DMS_DIR/plugins/dmsAgent"
 
 # The limit counter has its own repository. Until its DMS plugin is merged into the
 # default branch, the plugin lives on LIMIT_BRANCH.
-LIMIT_REPO="https://github.com/firatege/AILimitCounter"
+LIMIT_REPO="https://github.com/Phirios/AILimitCounter"
 LIMIT_BRANCH="feat/dms-plugin"
 LIMIT_SRC="$DATA_HOME/niri-setup/AILimitCounter"
 LOCAL_PLUGINS=(liveMode liveWallpaper)
@@ -300,7 +300,7 @@ main() {
       --gaming) gaming=1 ;;
       --wallpaper) wallpaper_source="${2:?--wallpaper needs a video file}"; shift ;;
       --profile)
-        PROFILE_DIR="$ROOT/profiles/${2:?--profile needs a name, e.g. --profile firat}"
+        PROFILE_DIR="$ROOT/profiles/${2:?--profile needs a folder name from profiles/}"
         [[ -d "$PROFILE_DIR" ]] || fail "no profile named $2 in $ROOT/profiles"
         shift ;;
       -h|--help) sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
