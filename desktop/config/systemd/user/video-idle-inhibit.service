@@ -1,0 +1,12 @@
+[Unit]
+Description=Prevent automatic desktop idle actions during browser/video playback
+PartOf=hyprland-session.target
+After=hyprland-session.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/phirios/.local/lib/desktop-idle-guard/media.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=hyprland-session.target

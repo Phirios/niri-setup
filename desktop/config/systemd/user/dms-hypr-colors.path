@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch DMS wallpaper colors for Hyprland
+
+[Path]
+PathChanged=%h/.config/hypr/dms/colors.lua
+Unit=dms-hypr-colors.service
+
+[Install]
+WantedBy=default.target
