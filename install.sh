@@ -21,7 +21,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 TERMINAL="kitty"
 DMS_COPR="avengemedia/dms"
 PACKAGES=(
-  niri xwayland-satellite xdg-desktop-portal-gnome "$TERMINAL"
+  niri xwayland-satellite xdg-desktop-portal-gnome "$TERMINAL" ghostty wtype
   git cargo python3 jq patch
   dbus-devel pkgconf-pkg-config
   gtk3 xdg-utils libnotify playerctl wl-clipboard procps-ng
