@@ -1,0 +1,1634 @@
+--- a/Modules/Lock/FadeToLockWindow.qml
++++ b/Modules/Lock/FadeToLockWindow.qml
+@@ -11,6 +11,11 @@
+ 
+     property bool active: false
+     property bool _completed: false
++    property bool wallpaperMode: false
++    readonly property var liveWallpaperDaemon: PluginService.pluginDaemonInstances["liveWallpaper"] || null
++    readonly property var wallpaperPlayback: liveWallpaperDaemon && screen ? liveWallpaperDaemon.playbackForScreen(screen.name) : null
++    readonly property string wallpaperFrame: liveWallpaperDaemon && wallpaperPlayback && screen
++        ? liveWallpaperDaemon.lockFrameUrlForScreen(screen.name, wallpaperPlayback.path) : ""
+ 
+     signal fadeCompleted
+     signal fadeCancelled
+@@ -33,8 +38,16 @@
+     Rectangle {
+         id: fadeOverlay
+         anchors.fill: parent
+-        color: "black"
++        color: root.wallpaperMode ? "transparent" : "black"
+         opacity: 0
++
++        Image {
++            anchors.fill: parent
++            source: root.wallpaperMode ? root.wallpaperFrame : ""
++            fillMode: Image.PreserveAspectCrop
++            smooth: true
++            cache: false
++        }
+ 
+         onOpacityChanged: {
+             if (opacity >= 0.99 && root.active && !root._completed) {
+@@ -53,19 +66,23 @@
+             property: "opacity"
+             from: 0.0
+             to: 1.0
+-            duration: SettingsData.fadeToLockGracePeriod * 1000
++            duration: root.wallpaperMode ? 220 : SettingsData.fadeToLockGracePeriod * 1000
+             easing.type: Easing.OutCubic
+         }
+     }
+ 
+-    function startFade() {
++    function startFade(showWallpaper = false) {
+         if (!SettingsData.fadeToLockEnabled)
+-            return;
++            return false;
++        if (showWallpaper && wallpaperFrame === "")
++            return false;
++        wallpaperMode = showWallpaper;
+         _completed = false;
+         active = true;
+         fadeOverlay.opacity = 0.0;
+         fadeSeq.stop();
+         fadeSeq.start();
++        return true;
+     }
+ 
+     function cancelFade() {
+@@ -95,8 +112,8 @@
+     MouseArea {
+         anchors.fill: parent
+         enabled: root.active
+-        onClicked: root.cancelFade()
+-        onPressed: root.cancelFade()
++        onClicked: { if (!root.wallpaperMode) root.cancelFade(); }
++        onPressed: { if (!root.wallpaperMode) root.cancelFade(); }
+     }
+ 
+     FocusScope {
+@@ -104,7 +121,8 @@
+         focus: root.active
+ 
+         Keys.onPressed: event => {
+-            root.cancelFade();
++            if (!root.wallpaperMode)
++                root.cancelFade();
+             event.accepted = true;
+         }
+     }
+--- a/Modules/Lock/Lock.qml
++++ b/Modules/Lock/Lock.qml
+@@ -76,7 +76,9 @@
+ 
+     Component.onCompleted: {
+         IdleService.lockComponent = this;
+-        if (SettingsData.lockAtStartup && !freshGreeterLogin())
++        // Hyprland starts hyprlock itself; keep the DMS startup lock for Niri.
++        const desktop = String(Quickshell.env("XDG_CURRENT_DESKTOP") || "").toLowerCase().split(":")[0];
++        if (SettingsData.lockAtStartup && !freshGreeterLogin() && desktop !== "hyprland")
+             lock();
+     }
+ 
+@@ -139,6 +141,7 @@
+         if (shouldLock || pendingLock)
+             return;
+ 
++        sharedPasswordBuffer = "";
+         resetLockRetry();
+         lockInitiatedLocally = true;
+         lockPowerOffArmed = powerOffOnLock;
+@@ -151,6 +154,15 @@
+ 
+         shouldLock = true;
+         notifyLoginctl(true);
++    }
++
++    function lockAnimated() {
++        if (shouldLock || pendingLock)
++            return;
++        if (SettingsData.fadeToLockEnabled)
++            IdleService.manualFadeToLockRequested();
++        else
++            lock();
+     }
+ 
+     function lockAndOutputsOff() {
+@@ -168,6 +180,7 @@
+             return;
+         resetLockRetry();
+         lockInitiatedLocally = false;
++        sharedPasswordBuffer = "";
+         notifyLoginctl(false);
+         shouldLock = false;
+     }
+@@ -175,6 +188,7 @@
+     function forceReset() {
+         lockInitiatedLocally = false;
+         pendingLock = false;
++        sharedPasswordBuffer = "";
+         shouldLock = false;
+         customLockerSpawned = false;
+         resetLockRetry();
+@@ -257,7 +271,11 @@
+         id: sharedPam
+         lockSecured: root.shouldLock
+         buffer: root.sharedPasswordBuffer
+-        onUnlockRequested: root.unlock()
++        // Hyprland's lock content releases the secure surface after its exit fade.
++        onUnlockRequested: {
++            if (!CompositorService.isHyprland)
++                root.unlock();
++        }
+     }
+ 
+     WlSessionLock {
+@@ -268,7 +286,8 @@
+         WlSessionLockSurface {
+             id: lockSurface
+ 
+-            property string currentScreenName: screen?.name ?? ""
++            // Resolve the capture before the session-lock surface receives its screen.
++            property string currentScreenName: screen?.name ?? (Quickshell.screens[0]?.name ?? "")
+             property bool isActiveScreen: {
+                 if (Quickshell.screens.length <= 1)
+                     return true;
+@@ -372,6 +391,10 @@
+     IpcHandler {
+         target: "lock"
+ 
++        function lockAnimated() {
++            root.lockAnimated();
++        }
++
+         function lock() {
+             root.lock();
+         }
+@@ -390,6 +413,10 @@
+ 
+         function demo() {
+             demoWindow.showDemo();
++        }
++
++        function wallpaperStatus(): string {
++            return demoWindow.wallpaperStatus();
+         }
+ 
+         function isLocked(): bool {
+--- a/Modules/Lock/LockScreenContent.qml
++++ b/Modules/Lock/LockScreenContent.qml
+@@ -4,10 +4,12 @@
+ import QtQuick.Effects
+ import QtQuick.Layouts
+ import QtQuick.Window
++import QtMultimedia
+ import Quickshell
+ import Quickshell.Hyprland
+ import Quickshell.Io
+ import Quickshell.Services.Mpris
++import Quickshell.Widgets
+ import qs.Common
+ import qs.Modals
+ import qs.Services
+@@ -28,6 +30,166 @@
+ 
+     property string passwordBuffer: ""
+     property bool demoMode: false
++    readonly property bool hyprlandCustomLayout: CompositorService.isHyprland
++    property bool passwordPromptVisible: false
++    property real wallpaperBlur: 0
++    property bool sceneReady: false
++    property bool failureGlow: false
++    property bool inlinePowerVisible: false
++    readonly property real auxOpacity: (!hyprlandCustomLayout || (sceneReady && !passwordPromptVisible && !unlocking)) ? 1 : 0
++    readonly property string liveWallpaperPath: {
++        const path = SettingsData.getPluginSetting("liveWallpaper", "videoPath", "") || "";
++        return path.startsWith("~/") ? Quickshell.env("HOME") + path.slice(1) : path;
++    }
++    property string lockWallpaperPath: ""
++    readonly property string effectiveLiveWallpaperPath: lockWallpaperPath || liveWallpaperPath
++    property bool wallpaperSynced: false
++    property int wallpaperSeekTarget: -1
++    property int wallpaperSeekAttempts: 0
++    property int wallpaperFramesAfterSeek: 0
++    readonly property var liveWallpaperDaemon: PluginService.pluginDaemonInstances["liveWallpaper"] || null
++    readonly property string captureScreenName: screenName || (Quickshell.screens[0]?.name ?? "")
++    onLiveWallpaperDaemonChanged: Qt.callLater(() => root.matchDesktopWallpaper())
++    function desktopWallpaperPlayback() {
++        return liveWallpaperDaemon ? liveWallpaperDaemon.playbackForScreen(captureScreenName) : null;
++    }
++
++    function ensureHeldWallpaperFrame() {
++        const playback = desktopWallpaperPlayback();
++        if (liveWallpaperDaemon && playback && !liveWallpaperDaemon.lockFrameUrlForScreen(captureScreenName, playback.path))
++            liveWallpaperDaemon.captureLockFrame(captureScreenName);
++    }
++
++    function matchDesktopWallpaper() {
++        if (!hyprlandCustomLayout)
++            return;
++        const playback = desktopWallpaperPlayback();
++        if (!playback || !playback.path) {
++            wallpaperSynced = true;
++            return;
++        }
++        if (lockWallpaperPath !== playback.path) {
++            lockWallpaperPath = playback.path;
++            wallpaperSynced = false;
++            wallpaperSeekAttempts = 0;
++        }
++        const video = liveWallpaperBackground.item;
++        if (video && video.seekable) {
++            if (wallpaperSeekTarget < 0)
++                wallpaperSynced = false;
++            wallpaperSeekTarget = playback.position;
++            wallpaperSeekAttempts++;
++            wallpaperFramesAfterSeek = 0;
++            video.seek(playback.position);
++            wallpaperFrameDeadline.restart();
++        }
++    }
++
++    function revealWallpaperWhenMatched() {
++        const video = liveWallpaperBackground.item;
++        const desktop = desktopWallpaperPlayback();
++        if (!video || !desktop)
++            return;
++        const duration = desktop.duration || 0;
++        let drift = Math.abs(video.position - desktop.position);
++        if (duration > 0)
++            drift = Math.min(drift, duration - drift);
++        if (wallpaperFramesAfterSeek >= 2 && (drift <= 250 || wallpaperSeekAttempts >= 3))
++            wallpaperSynced = true;
++        else if (wallpaperSeekAttempts < 3 && wallpaperFramesAfterSeek >= 2)
++            matchDesktopWallpaper();
++    }
++
++    Timer {
++        id: wallpaperFrameDeadline
++        interval: 250
++        onTriggered: {
++            if (root.wallpaperFramesAfterSeek === 0 && root.wallpaperSeekAttempts < 3)
++                root.matchDesktopWallpaper();
++        }
++    }
++
++    Timer {
++        id: wallpaperPathRefresh
++        interval: 750
++        onTriggered: root.matchDesktopWallpaper()
++    }
++
++    Connections {
++        target: root.liveWallpaperDaemon
++        function onVideoPathChanged() { wallpaperPathRefresh.restart(); }
++    }
++
++    function wallpaperPlaybackStatus() {
++        const video = liveWallpaperBackground.item;
++        return {
++            screen: screenName,
++            path: effectiveLiveWallpaperPath,
++            source: video ? video.source.toString() : null,
++            position: video ? video.position : null,
++            seekable: video ? video.seekable : false,
++            playbackState: video ? video.playbackState : null,
++            seekTarget: wallpaperSeekTarget,
++            synced: wallpaperSynced,
++            seekAttempts: wallpaperSeekAttempts,
++            framesAfterSeek: wallpaperFramesAfterSeek,
++            heldFrameSource: heldWallpaperFrame.source.toString(),
++            heldFrameReady: heldWallpaperFrame.status === Image.Ready,
++            heldFrameOpacity: heldWallpaperFrame.opacity,
++            desktop: desktopWallpaperPlayback()
++        };
++    }
++    focus: hyprlandCustomLayout
++
++    onPasswordPromptVisibleChanged: {
++        if (hyprlandCustomLayout && !unlocking) {
++            wallpaperBlur = passwordPromptVisible ? 0 : 0.8;
++        }
++    }
++
++    function handlePromptKey(event) {
++        if (!hyprlandCustomLayout || root.unlocking || pam.passwd.active)
++            return;
++        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && !passwordPromptVisible) {
++            passwordPromptVisible = true;
++            Qt.callLater(() => passwordField.forceActiveFocus());
++            event.accepted = true;
++        } else if (!passwordPromptVisible && event.text.length > 0 && event.text.codePointAt(0) >= 0x20 && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
++            passwordPromptVisible = true;
++            passwordField.insertText(event.text);
++            Qt.callLater(() => passwordField.forceActiveFocus());
++            event.accepted = true;
++        } else if (event.key === Qt.Key_Escape && passwordPromptVisible) {
++            passwordField.clear();
++            passwordPromptVisible = false;
++            root.forceActiveFocus();
++            event.accepted = true;
++        }
++    }
++
++    Keys.onPressed: event => handlePromptKey(event)
++
++    Shortcut {
++        sequences: ["Return", "Enter"]
++        context: Qt.WindowShortcut
++        enabled: root.hyprlandCustomLayout && !root.passwordPromptVisible && !root.unlocking && !root.pam.passwd.active
++        onActivated: {
++            root.passwordPromptVisible = true;
++            Qt.callLater(() => passwordField.forceActiveFocus());
++        }
++    }
++
++    Shortcut {
++        sequence: "Escape"
++        context: Qt.WindowShortcut
++        enabled: root.hyprlandCustomLayout && root.passwordPromptVisible && !root.unlocking && !root.pam.passwd.active
++        onActivated: {
++            passwordField.clear();
++            root.passwordPromptVisible = false;
++            Qt.callLater(() => root.forceActiveFocus());
++        }
++    }
++
+     property var pam: demoPam
+     property string screenName: ""
+     property bool unlocking: false
+@@ -40,6 +202,12 @@
+     property var sessionLock: null
+     readonly property bool hasCustomWallpaper: SettingsData.lockScreenWallpaperPath !== ""
+     readonly property string lockFontFamily: SettingsData.lockScreenFontFamily
++    readonly property string hyprLockFontFamily: hyprlandCustomLayout ? (rubikTrial.status === FontLoader.Ready ? rubikTrial.name : "Noto Sans") : lockFontFamily
++
++    FontLoader {
++        id: rubikTrial
++        source: "file:///home/phirios/.local/share/fonts/RubikNew/Rubik-Variable.ttf"
++    }
+ 
+     component ClockDigitText: StyledText {
+         font.pixelSize: 120
+@@ -53,10 +221,28 @@
+     signal passwordEdited(string text)
+ 
+     function resetLockState() {
++        passwordField.clear();
++        ensureHeldWallpaperFrame();
++        wallpaperSynced = false;
++        wallpaperSeekAttempts = 0;
++        wallpaperFramesAfterSeek = 0;
++        matchDesktopWallpaper();
+         lockerReadySent = false;
+         lockerReadyArmed = true;
+         unlocking = false;
+         pamState = "";
++        passwordPromptVisible = false;
++        failureGlow = false;
++        inlinePowerVisible = false;
++        sceneReady = false;
++        sceneRevealTimer.stop();
++        if (hyprlandCustomLayout)
++            Qt.callLater(() => root.forceActiveFocus());
++
++        if (hyprlandCustomLayout)
++            Qt.callLater(() => root.wallpaperBlur = 0.8);
++        if (hyprlandCustomLayout && (!sessionLock || sessionLock.secure))
++            sceneRevealTimer.restart();
+         if (pam)
+             pam.lockMessage = "";
+     }
+@@ -64,6 +250,10 @@
+     function focusPasswordField() {
+         if (demoMode || !passwordField)
+             return;
++        if (hyprlandCustomLayout && !passwordPromptVisible) {
++            root.forceActiveFocus();
++            return;
++        }
+         passwordField.forceActiveFocus();
+     }
+ 
+@@ -111,17 +301,32 @@
+     }
+ 
+     Component.onCompleted: {
++        if (demoMode)
++            ensureHeldWallpaperFrame();
++        matchDesktopWallpaper();
+         WeatherService.addRef();
+         UserInfoService.getUserInfo();
+ 
+         if (CompositorService.isHyprland)
+             updateHyprlandLayout();
+ 
++        if (hyprlandCustomLayout)
++            Qt.callLater(() => root.forceActiveFocus());
++
++        if (hyprlandCustomLayout)
++            Qt.callLater(() => root.wallpaperBlur = 0.8);
++        if (hyprlandCustomLayout && (demoMode || (sessionLock && sessionLock.secure)))
++            sceneRevealTimer.restart();
++
+         lockerReadyArmed = true;
+     }
+ 
+     Component.onDestruction: {
+         WeatherService.removeRef();
++    }
++
++    Behavior on wallpaperBlur {
++        NumberAnimation { duration: 320; easing.type: Easing.InOutCubic }
+     }
+ 
+     function sendLockerReadyOnce() {
+@@ -167,7 +372,15 @@
+         enabled: target !== null
+         function onSecureChanged() {
+             root.maybeSend();
+-        }
++            if (root.hyprlandCustomLayout && root.sessionLock.secure)
++                sceneRevealTimer.restart();
++        }
++    }
++
++    Timer {
++        id: sceneRevealTimer
++        interval: 70
++        onTriggered: root.sceneReady = true
+     }
+ 
+     Connections {
+@@ -232,13 +445,13 @@
+ 
+     Rectangle {
+         anchors.fill: parent
+-        color: SettingsData.effectiveWallpaperBackgroundColor
++        color: root.hyprlandCustomLayout && root.liveWallpaperPath !== "" ? "transparent" : SettingsData.effectiveWallpaperBackgroundColor
+     }
+ 
+     Loader {
+         anchors.fill: parent
+         active: {
+-            if (root.hasCustomWallpaper)
++            if (root.hasCustomWallpaper || (root.hyprlandCustomLayout && root.liveWallpaperPath !== ""))
+                 return false;
+             var currentWallpaper = SessionData.getMonitorWallpaper(screenName);
+             return !currentWallpaper || (currentWallpaper && currentWallpaper.startsWith("#"));
+@@ -269,7 +482,7 @@
+         readonly property real screenScale: CompositorService.getScreenScale(Quickshell.screens.find(s => s.name === root.screenName) ?? null)
+         readonly property size decodeSize: Qt.size(Math.round(width * screenScale), Math.round(height * screenScale))
+ 
+-        active: wallpaperSource !== "" && width > 0 && height > 0
++        active: !(root.hyprlandCustomLayout && root.liveWallpaperPath !== "") && wallpaperSource !== "" && width > 0 && height > 0
+         asynchronous: false
+ 
+         sourceComponent: fillModeName === "Scrolling" ? scrollWallpaperComp : plainWallpaperComp
+@@ -278,7 +491,7 @@
+         layer.effect: MultiEffect {
+             autoPaddingEnabled: false
+             blurEnabled: true
+-            blur: 0.8
++            blur: root.hyprlandCustomLayout ? root.wallpaperBlur : 0.8
+             blurMax: 32
+             blurMultiplier: 1
+         }
+@@ -287,6 +500,81 @@
+             NumberAnimation {
+                 duration: Theme.mediumDuration
+                 easing.type: Theme.standardEasing
++            }
++        }
++    }
++
++    Image {
++        id: heldWallpaperFrame
++        anchors.fill: parent
++        source: root.liveWallpaperDaemon ? root.liveWallpaperDaemon.lockFrameUrlForScreen(root.captureScreenName, root.effectiveLiveWallpaperPath) : ""
++        fillMode: Image.PreserveAspectCrop
++        smooth: true
++        cache: false
++        visible: root.hyprlandCustomLayout && source !== "" && opacity > 0
++        opacity: root.wallpaperSynced ? 0 : 1
++        Behavior on opacity { NumberAnimation { duration: 32; easing.type: Easing.InOutCubic } }
++        layer.enabled: true
++        layer.effect: MultiEffect {
++            autoPaddingEnabled: false
++            blurEnabled: true
++            blur: root.wallpaperBlur
++            blurMax: 32
++        }
++    }
++
++    Loader {
++        id: liveWallpaperBackground
++        anchors.fill: parent
++        z: -1
++        active: root.hyprlandCustomLayout && root.effectiveLiveWallpaperPath !== ""
++        onLoaded: root.matchDesktopWallpaper()
++        sourceComponent: Item {
++            id: lockVideo
++            readonly property url source: lockMedia.source
++            readonly property int position: lockMedia.position
++            readonly property bool seekable: lockMedia.seekable
++            readonly property int playbackState: lockMedia.playbackState
++
++            function seek(position) { lockMedia.position = position; }
++
++            MediaPlayer {
++                id: lockMedia
++                source: root.encodeFileUrl(root.effectiveLiveWallpaperPath)
++                videoOutput: lockOutput
++                loops: MediaPlayer.Infinite
++                Component.onCompleted: play()
++                onSourceChanged: play()
++                onSeekableChanged: {
++                    if (seekable)
++                        root.matchDesktopWallpaper();
++                }
++                onPlaybackStateChanged: {
++                    if (playbackState === MediaPlayer.PlayingState && !root.wallpaperSynced)
++                        root.matchDesktopWallpaper();
++                }
++            }
++
++            VideoOutput {
++                id: lockOutput
++                anchors.fill: parent
++                fillMode: VideoOutput.PreserveAspectCrop
++                Connections {
++                    target: lockOutput.videoSink
++                    function onVideoFrameChanged() {
++                        if (root.wallpaperSeekTarget < 0 || root.wallpaperSynced)
++                            return;
++                        root.wallpaperFramesAfterSeek++;
++                        root.revealWallpaperWhenMatched();
++                    }
++                }
++                layer.enabled: true
++                layer.effect: MultiEffect {
++                    autoPaddingEnabled: false
++                    blurEnabled: true
++                    blur: root.wallpaperBlur
++                    blurMax: 32
++                }
+             }
+         }
+     }
+@@ -350,7 +638,7 @@
+     Rectangle {
+         anchors.fill: parent
+         color: "black"
+-        opacity: 0.4
++        opacity: root.hyprlandCustomLayout ? root.wallpaperBlur * 0.5 : 0.4
+     }
+ 
+     SystemClock {
+@@ -370,7 +658,7 @@
+             anchors.bottomMargin: 60
+             width: parent.width
+             height: verticalClock.visible ? verticalClock.implicitHeight : clockText.implicitHeight
+-            visible: SettingsData.lockScreenShowTime
++            visible: !root.hyprlandCustomLayout && SettingsData.lockScreenShowTime
+ 
+             Row {
+                 id: clockText
+@@ -499,7 +787,7 @@
+             anchors.horizontalCenter: parent.horizontalCenter
+             anchors.top: clockContainer.bottom
+             anchors.topMargin: 4
+-            visible: SettingsData.lockScreenShowDate
++            visible: !root.hyprlandCustomLayout && SettingsData.lockScreenShowDate
+             text: {
+                 if (SettingsData.lockDateFormat && SettingsData.lockDateFormat.length > 0) {
+                     return systemClock.date.toLocaleDateString(I18n.locale(), SettingsData.lockDateFormat);
+@@ -512,10 +800,67 @@
+             opacity: 0.9
+         }
+ 
++        Row {
++            id: hyprClockWeather
++            visible: root.hyprlandCustomLayout
++            opacity: root.auxOpacity
++            anchors.top: parent.top
++            anchors.left: parent.left
++            anchors.margins: 42
++            spacing: 20
++
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
++
++            Column {
++                spacing: 2
++                Text {
++                    text: Qt.formatTime(systemClock.date, "HH:mm")
++                    font.pixelSize: 48
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                }
++                StyledText {
++                    text: Qt.formatDate(systemClock.date, "dddd, d MMMM")
++                    font.pixelSize: 17
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                    opacity: 0.8
++                }
++            }
++
++            Rectangle {
++                width: 1
++                height: 67
++                color: Qt.rgba(1, 1, 1, 0.5)
++            }
++
++            Column {
++                spacing: 3
++                anchors.verticalCenter: parent.verticalCenter
++                StyledText {
++                    text: WeatherService.weather.available ? ((SettingsData.useFahrenheit ? WeatherService.weather.tempF : WeatherService.weather.temp) + "°") : "—"
++                    font.pixelSize: 27
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                }
++                StyledText {
++                    text: WeatherService.weather.available ? "İzmir" : "Weather unavailable"
++                    font.pixelSize: 15
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                    opacity: 0.8
++                }
++            }
++        }
++
+         Item {
+             id: lockNotificationPanel
+ 
+-            readonly property int notificationMode: SettingsData.lockScreenNotificationMode
++            readonly property int notificationMode: root.hyprlandCustomLayout ? 3 : SettingsData.lockScreenNotificationMode
+             readonly property var notifications: NotificationService.groupedNotifications
+             readonly property int totalCount: {
+                 let count = 0;
+@@ -544,13 +889,18 @@
+                 return Object.values(groups).sort((a, b) => b.count - a.count);
+             }
+ 
+-            anchors.horizontalCenter: parent.horizontalCenter
+-            anchors.top: dateText.visible ? dateText.bottom : clockContainer.bottom
+-            anchors.topMargin: Theme.spacingM
++            anchors.horizontalCenter: root.hyprlandCustomLayout ? undefined : parent.horizontalCenter
++            anchors.left: root.hyprlandCustomLayout ? parent.left : undefined
++            anchors.leftMargin: root.hyprlandCustomLayout ? 42 : 0
++            anchors.top: root.hyprlandCustomLayout ? hyprClockWeather.bottom : (dateText.visible ? dateText.bottom : clockContainer.bottom)
++            anchors.topMargin: root.hyprlandCustomLayout ? 24 : Theme.spacingM
+             width: Math.min(380, parent.width - Theme.spacingXL * 2)
+             height: notificationMode === 0 || !hasNotifications ? 0 : contentLoader.height
+             visible: notificationMode > 0 && hasNotifications
++            opacity: root.auxOpacity
+             clip: true
++
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
+ 
+             Behavior on height {
+                 NumberAnimation {
+@@ -807,47 +1157,158 @@
+             }
+         }
+ 
++        StyledText {
++            visible: root.hyprlandCustomLayout && !lockNotificationPanel.hasNotifications
++            anchors.top: hyprClockWeather.bottom
++            anchors.topMargin: 24
++            anchors.left: parent.left
++            anchors.leftMargin: 42
++            text: "No notifications"
++            font.pixelSize: 15
++            font.family: root.hyprLockFontFamily
++            renderType: Text.NativeRendering
++            color: "white"
++            opacity: root.auxOpacity * 0.72
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
++        }
++
+         ColumnLayout {
+             id: passwordLayout
+-            anchors.horizontalCenter: parent.horizontalCenter
+-            anchors.top: lockNotificationPanel.visible ? lockNotificationPanel.bottom : (dateText.visible ? dateText.bottom : clockContainer.bottom)
+-            anchors.topMargin: Theme.spacingL
++            opacity: root.hyprlandCustomLayout ? (root.sceneReady && !root.unlocking ? 1 : 0) : 1
++            Behavior on opacity {
++                NumberAnimation { duration: 300; easing.type: Easing.InOutCubic }
++            }
++            anchors.horizontalCenter: root.hyprlandCustomLayout ? undefined : parent.horizontalCenter
++            x: root.hyprlandCustomLayout ? (root.width - width) / 2 : 0
++            anchors.top: root.hyprlandCustomLayout ? undefined : (lockNotificationPanel.visible ? lockNotificationPanel.bottom : (dateText.visible ? dateText.bottom : clockContainer.bottom))
++            anchors.topMargin: root.hyprlandCustomLayout ? 0 : Theme.spacingL
++            anchors.verticalCenter: root.hyprlandCustomLayout ? parent.verticalCenter : undefined
+             spacing: Theme.spacingM
+             width: 380
+ 
+-            RowLayout {
+-                spacing: Theme.spacingL
++            GridLayout {
++                columns: root.hyprlandCustomLayout ? 1 : 2
++                columnSpacing: Theme.spacingL
++                rowSpacing: Theme.spacingM
+                 Layout.fillWidth: true
+-
+-                DankCircularImage {
+-                    Layout.preferredWidth: 60
+-                    Layout.preferredHeight: 60
+-                    imageSource: {
+-                        if (PortalService.profileImage === "")
+-                            return "";
+-                        if (PortalService.profileImage.startsWith("/"))
+-                            return encodeFileUrl(PortalService.profileImage);
+-                        return PortalService.profileImage;
+-                    }
+-                    fallbackIcon: "person"
++                Layout.preferredWidth: root.hyprlandCustomLayout ? 380 : -1
++
++                Item {
++                    Layout.preferredWidth: root.hyprlandCustomLayout ? 168 : 60
++                    Layout.preferredHeight: root.hyprlandCustomLayout ? 168 : 60
++                    Layout.alignment: root.hyprlandCustomLayout ? Qt.AlignHCenter : Qt.AlignVCenter
+                     visible: SettingsData.lockScreenShowProfileImage
++
++                    DankCircularImage {
++                        anchors.fill: parent
++                        anchors.margins: root.hyprlandCustomLayout ? 5 : 0
++                        imageSource: {
++                            if (root.hyprlandCustomLayout)
++                                return root.encodeFileUrl("/home/phirios/Pictures/profile.png");
++                            if (PortalService.profileImage === "")
++                                return "";
++                            if (PortalService.profileImage.startsWith("/"))
++                                return encodeFileUrl(PortalService.profileImage);
++                            return PortalService.profileImage;
++                        }
++                        fallbackIcon: "person"
++                    }
++
++                    Rectangle {
++                        anchors.fill: parent
++                        visible: root.hyprlandCustomLayout
++                        color: "transparent"
++                        radius: width / 2
++                        border.width: pam.passwd.active ? 4 : 2
++                        border.color: root.unlocking ? Theme.success : (root.failureGlow ? Theme.error : Theme.primary)
++                        opacity: pam.passwd.active ? 0.55 : 0.9
++
++                        SequentialAnimation on opacity {
++                            running: root.hyprlandCustomLayout && pam.passwd.active
++                            loops: Animation.Infinite
++                            NumberAnimation { from: 0.45; to: 1; duration: 500; easing.type: Easing.InOutSine }
++                            NumberAnimation { from: 1; to: 0.45; duration: 500; easing.type: Easing.InOutSine }
++                        }
++
++                        Behavior on border.color {
++                            ColorAnimation { duration: 220 }
++                        }
++                    }
+                 }
+ 
+                 Rectangle {
+                     id: passwordBox
+ 
+                     property bool showPassword: false
+-
+-                    Layout.fillWidth: true
+-                    Layout.preferredHeight: 60
+-                    radius: Theme.cornerRadius
+-                    color: Theme.withAlpha(Theme.surfaceContainer, 0.9)
++                    property real shakeOffset: 0
++                    property real animatedHeight: root.hyprlandCustomLayout ? (root.passwordPromptVisible ? 54 : 0) : 60
++
++                    Behavior on animatedHeight {
++                        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
++                    }
++
++                    Layout.fillWidth: !root.hyprlandCustomLayout
++                    Layout.preferredWidth: root.hyprlandCustomLayout ? 320 : -1
++                    Layout.alignment: root.hyprlandCustomLayout ? Qt.AlignHCenter : Qt.AlignVCenter
++                    Layout.preferredHeight: animatedHeight
++                    radius: root.hyprlandCustomLayout ? height / 2 : Theme.cornerRadius
++                    color: root.hyprlandCustomLayout ? (Theme.isLightMode ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(0.02, 0.04, 0.08, 0.34)) : Theme.withAlpha(Theme.surfaceContainer, 0.9)
+                     border.color: passwordField.activeFocus ? Theme.primary : Qt.rgba(1, 1, 1, 0.3)
+-                    border.width: passwordField.activeFocus ? 2 : 1
+-                    visible: SettingsData.lockScreenShowPasswordField || root.passwordBuffer.length > 0
++                    border.width: root.hyprlandCustomLayout ? 0 : (passwordField.activeFocus ? 2 : 1)
++                    visible: root.hyprlandCustomLayout || SettingsData.lockScreenShowPasswordField || root.passwordBuffer.length > 0
++                    opacity: root.hyprlandCustomLayout ? (root.passwordPromptVisible ? 1 : 0) : 1
++                    scale: root.hyprlandCustomLayout ? (root.passwordPromptVisible ? 1 : 0.94) : 1
++                    enabled: !root.hyprlandCustomLayout || root.passwordPromptVisible
++                    clip: !root.hyprlandCustomLayout
++                    transform: Translate { x: passwordBox.shakeOffset }
++
++                    SequentialAnimation {
++                        id: passwordShake
++                        NumberAnimation { target: passwordBox; property: "shakeOffset"; to: -12; duration: 55 }
++                        NumberAnimation { target: passwordBox; property: "shakeOffset"; to: 10; duration: 70 }
++                        NumberAnimation { target: passwordBox; property: "shakeOffset"; to: -7; duration: 70 }
++                        NumberAnimation { target: passwordBox; property: "shakeOffset"; to: 4; duration: 65 }
++                        NumberAnimation { target: passwordBox; property: "shakeOffset"; to: 0; duration: 65 }
++                    }
++
++                    Behavior on opacity {
++                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
++                    }
++                    Behavior on scale {
++                        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
++                    }
++
++                    BackdropBlur {
++                        anchors.fill: parent
++                        sourceItem: liveWallpaperBackground.active ? liveWallpaperBackground : wallpaperBackground
++                        radius: parent.radius
++                        blurAmount: 0.8
++                        blurMax: 32
++                        visible: root.hyprlandCustomLayout && root.passwordPromptVisible
++                    }
++
++                    Rectangle {
++                        anchors.fill: parent
++                        radius: height / 2
++                        color: "transparent"
++                        border.width: 2
++                        border.color: root.failureGlow ? Theme.error : Theme.primary
++                        visible: root.hyprlandCustomLayout && root.passwordPromptVisible
++                        layer.enabled: visible
++                        layer.effect: MultiEffect {
++                            shadowEnabled: true
++                            shadowBlur: 0.55
++                            shadowOpacity: 0.65
++                            shadowColor: root.failureGlow ? Theme.error : Theme.primary
++                            shadowHorizontalOffset: 0
++                            shadowVerticalOffset: 0
++                        }
++                        Behavior on border.color { ColorAnimation { duration: 220 } }
++                    }
+ 
+                     Item {
+                         id: lockIconContainer
++                        visible: !root.hyprlandCustomLayout
+                         anchors.left: parent.left
+                         anchors.leftMargin: Theme.spacingM
+                         anchors.verticalCenter: parent.verticalCenter
+@@ -968,7 +1429,7 @@
+                         }
+ 
+                         anchors.fill: parent
+-                        anchors.leftMargin: lockIconContainer.width + Theme.spacingM * 2
++                        anchors.leftMargin: root.hyprlandCustomLayout ? Theme.spacingM : lockIconContainer.width + Theme.spacingM * 2
+                         anchors.rightMargin: {
+                             let margin = Theme.spacingM;
+                             if (loadingSpinner.visible) {
+@@ -989,9 +1450,9 @@
+                             return margin;
+                         }
+                         opacity: 0
+-                        focus: true
+-                        enabled: !demoMode
+-                        activeFocusOnTab: !demoMode
++                        focus: !root.hyprlandCustomLayout || root.passwordPromptVisible
++                        enabled: !demoMode || root.hyprlandCustomLayout
++                        activeFocusOnTab: !demoMode || root.hyprlandCustomLayout
+                         onTextChanged: cursorPosition = text.length
+                         onAccepted: {
+                             if (!demoMode && !root.unlocking && !pam.passwd.active && !pam.u2fPending) {
+@@ -1001,7 +1462,7 @@
+                         Keys.onPressed: event => handleKey(event)
+ 
+                         function handleKey(event) {
+-                            if (demoMode) {
++                            if (demoMode && !root.hyprlandCustomLayout) {
+                                 return;
+                             }
+ 
+@@ -1017,6 +1478,8 @@
+                                     return;
+                                 }
+                                 clear();
++                                if (root.hyprlandCustomLayout)
++                                    root.passwordPromptVisible = false;
+                                 event.accepted = true;
+                                 return;
+                             }
+@@ -1080,6 +1543,15 @@
+                             switch (event.key) {
+                             case Qt.Key_Return:
+                             case Qt.Key_Enter:
++                                if (root.hyprlandCustomLayout && !root.passwordPromptVisible) {
++                                    root.passwordPromptVisible = true;
++                                    event.accepted = true;
++                                    return;
++                                }
++                                if (demoMode) {
++                                    event.accepted = true;
++                                    return;
++                                }
+                                 accepted();
+                                 event.accepted = true;
+                                 return;
+@@ -1143,28 +1615,28 @@
+                                     return;
+                                 const committed = text;
+                                 text = "";
+-                                if (demoMode || root.unlocking || pam.passwd.active)
++                                if ((demoMode && !root.hyprlandCustomLayout) || root.unlocking || pam.passwd.active || (root.hyprlandCustomLayout && !root.passwordPromptVisible))
+                                     return;
+                                 passwordField.insertText(committed);
+                             }
+                         }
+ 
+                         Component.onCompleted: {
+-                            if (!demoMode) {
++                            if (!demoMode && (!root.hyprlandCustomLayout || root.passwordPromptVisible)) {
+                                 forceActiveFocus();
+                             }
+                         }
+ 
+                         onVisibleChanged: {
+-                            if (visible && !demoMode) {
++                            if (visible && !demoMode && (!root.hyprlandCustomLayout || root.passwordPromptVisible)) {
+                                 forceActiveFocus();
+                             }
+                         }
+ 
+                         onActiveFocusChanged: {
+-                            if (!activeFocus && !demoMode && passwordField && !powerMenu.isVisible) {
++                            if (!activeFocus && !demoMode && passwordField && !powerMenu.isVisible && (!root.hyprlandCustomLayout || root.passwordPromptVisible)) {
+                                 Qt.callLater(() => {
+-                                    if (passwordField && passwordField.forceActiveFocus) {
++                                    if (passwordField && passwordField.forceActiveFocus && (!root.hyprlandCustomLayout || root.passwordPromptVisible)) {
+                                         passwordField.forceActiveFocus();
+                                     }
+                                 });
+@@ -1190,9 +1662,10 @@
+ 
+                     StyledText {
+                         id: placeholder
+-
+-                        anchors.left: lockIconContainer.right
+-                        anchors.leftMargin: Theme.spacingM
++                        visible: !root.hyprlandCustomLayout
++
++                        anchors.left: root.hyprlandCustomLayout ? parent.left : lockIconContainer.right
++                        anchors.leftMargin: root.hyprlandCustomLayout ? Theme.spacingM : Theme.spacingM
+                         anchors.right: (revealButton.visible ? revealButton.left : (virtualKeyboardButton.visible ? virtualKeyboardButton.left : (securityKeyButton.visible ? securityKeyButton.left : (enterButton.visible ? enterButton.left : (loadingSpinner.visible ? loadingSpinner.left : parent.right)))))
+                         anchors.rightMargin: 2
+                         anchors.verticalCenter: parent.verticalCenter
+@@ -1211,10 +1684,11 @@
+                             if (pam.passwd.active) {
+                                 return "Authenticating...";
+                             }
+-                            return "Password...";
+-                        }
+-                        color: root.unlocking ? Theme.primary : (pam.passwd.active ? Theme.primary : Theme.outline)
++                            return root.hyprlandCustomLayout ? "Password" : "Password...";
++                        }
++                        color: root.hyprlandCustomLayout ? Theme.surfaceTextSecondary : (root.unlocking ? Theme.primary : (pam.passwd.active ? Theme.primary : Theme.outline))
+                         font.pixelSize: Theme.fontSizeMedium
++                        horizontalAlignment: root.hyprlandCustomLayout ? Text.AlignHCenter : Text.AlignLeft
+                         opacity: (demoMode || root.passwordBuffer.length === 0) ? 1 : 0
+ 
+                         Behavior on opacity {
+@@ -1237,6 +1711,41 @@
+ 
+                         property real scrollX: 0
+                         property real scrollY: 0
++
++                        function syncDots() {
++                            const length = root.passwordBuffer.length;
++                            while (passwordDotsModel.count < length)
++                                passwordDotsModel.append({ active: true });
++                            for (let index = 0; index < passwordDotsModel.count; index++) {
++                                const shouldShow = index < length;
++                                if (passwordDotsModel.get(index).active !== shouldShow)
++                                    passwordDotsModel.setProperty(index, "active", shouldShow);
++                            }
++                            if (passwordDotsModel.count > length)
++                                dotRemovalTimer.restart();
++                            else
++                                dotRemovalTimer.stop();
++                        }
++
++                        Component.onCompleted: syncDots()
++
++                        ListModel { id: passwordDotsModel }
++
++                        Timer {
++                            id: dotRemovalTimer
++                            interval: 200
++                            onTriggered: {
++                                while (passwordDotsModel.count > root.passwordBuffer.length)
++                                    passwordDotsModel.remove(passwordDotsModel.count - 1);
++                            }
++                        }
++
++                        Connections {
++                            target: root
++                            function onPasswordBufferChanged() {
++                                passwordViewport.syncDots();
++                            }
++                        }
+ 
+                         function followCursor() {
+                             const rect = passwordDisplay.cursorRectangle;
+@@ -1256,8 +1765,8 @@
+                             return Math.max(viewSize - contentSize, Math.min(0, offset));
+                         }
+ 
+-                        anchors.left: lockIconContainer.right
+-                        anchors.leftMargin: Theme.spacingM
++                        anchors.left: root.hyprlandCustomLayout ? parent.left : lockIconContainer.right
++                        anchors.leftMargin: root.hyprlandCustomLayout ? Theme.spacingM : Theme.spacingM
+                         anchors.right: (revealButton.visible ? revealButton.left : (virtualKeyboardButton.visible ? virtualKeyboardButton.left : (securityKeyButton.visible ? securityKeyButton.left : (enterButton.visible ? enterButton.left : (loadingSpinner.visible ? loadingSpinner.left : parent.right)))))
+                         anchors.rightMargin: 2
+                         anchors.top: parent.top
+@@ -1272,7 +1781,7 @@
+                         TextEdit {
+                             id: passwordDisplay
+ 
+-                            x: passwordViewport.scrollX
++                            x: root.hyprlandCustomLayout ? (passwordViewport.width - implicitWidth) / 2 : passwordViewport.scrollX
+                             y: passwordViewport.scrollY
+                             width: wrapMode === TextEdit.NoWrap ? implicitWidth : passwordViewport.width
+                             readOnly: true
+@@ -1289,10 +1798,11 @@
+                                 return "•".repeat(root.passwordBuffer.length);
+                             }
+                             color: Theme.surfaceText
+-                            font.family: Theme.fontFamily
++                            font.family: root.hyprlandCustomLayout ? root.hyprLockFontFamily : Theme.fontFamily
+                             font.weight: Theme.fontWeight
+-                            font.pixelSize: passwordBox.showPassword ? Theme.fontSizeMedium : Theme.fontSizeLarge
+-                            opacity: (demoMode || root.passwordBuffer.length > 0) ? 1 : 0
++                            font.pixelSize: root.hyprlandCustomLayout ? 18 : (passwordBox.showPassword ? Theme.fontSizeMedium : Theme.fontSizeLarge)
++                            font.letterSpacing: root.hyprlandCustomLayout ? 4 : 0
++                            opacity: root.hyprlandCustomLayout && !passwordBox.showPassword ? 0 : ((demoMode || root.passwordBuffer.length > 0) ? 1 : 0)
+ 
+                             onTextChanged: cursorPosition = passwordField.cursorPosition
+                             onCursorRectangleChanged: passwordViewport.followCursor()
+@@ -1307,13 +1817,52 @@
+                             }
+                         }
+ 
++                        Row {
++                            visible: root.hyprlandCustomLayout && !passwordBox.showPassword && passwordDotsModel.count > 0
++                            anchors.centerIn: parent
++                            spacing: 0
++
++                            Repeater {
++                                model: passwordDotsModel
++
++                                Item {
++                                    required property bool active
++                                    property bool appeared: false
++                                    width: active ? 15 : 0
++                                    height: 10
++
++                                    Behavior on width {
++                                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
++                                    }
++
++                                    Rectangle {
++                                        width: 10
++                                        height: 10
++                                        radius: 5
++                                        color: root.hyprlandCustomLayout ? Qt.rgba(0.07, 0.1, 0.14, 0.72) : Theme.surfaceText
++                                        opacity: parent.active && parent.appeared ? 1 : 0
++                                        scale: parent.active && parent.appeared ? 1 : 0.35
++
++                                        Behavior on opacity {
++                                            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
++                                        }
++                                        Behavior on scale {
++                                            NumberAnimation { duration: 190; easing.type: Easing.OutBack }
++                                        }
++                                    }
++
++                                    Component.onCompleted: appeared = true
++                                }
++                            }
++                        }
++
+                         DankTextCursor {
+                             id: passwordCursor
+ 
+                             x: passwordDisplay.x + passwordDisplay.cursorRectangle.x
+                             y: passwordDisplay.y + passwordDisplay.cursorRectangle.y
+                             height: passwordDisplay.cursorRectangle.height
+-                            shown: !demoMode && passwordField.activeFocus && !pam.passwd.active && !pam.u2fPending && !root.unlocking
++                            shown: !root.hyprlandCustomLayout && !demoMode && passwordField.activeFocus && !pam.passwd.active && !pam.u2fPending && !root.unlocking
+ 
+                             Connections {
+                                 target: passwordField
+@@ -1338,7 +1887,7 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         iconName: parent.showPassword ? "visibility_off" : "visibility"
+                         buttonSize: 32
+-                        visible: !demoMode && root.passwordBuffer.length > 0 && !pam.passwd.active && !root.unlocking
++                        visible: !root.hyprlandCustomLayout && !demoMode && root.passwordBuffer.length > 0 && !pam.passwd.active && !root.unlocking
+                         enabled: visible
+                         onClicked: parent.showPassword = !parent.showPassword
+                     }
+@@ -1350,7 +1899,7 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         iconName: "passkey"
+                         buttonSize: 32
+-                        visible: root.canStartSecurityKeyUnlock()
++                        visible: !root.hyprlandCustomLayout && root.canStartSecurityKeyUnlock()
+                         enabled: visible
+                         tooltipText: SettingsData.lockScreenSecurityKeyShortcutEnabled ? I18n.tr("Security key (%1)", "lock screen security key button tooltip with shortcut").arg(SettingsData.lockScreenSecurityKeyShortcut) : I18n.tr("Security key", "lock screen security key button tooltip")
+                         onClicked: root.triggerSecurityKeyUnlock()
+@@ -1363,7 +1912,7 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         iconName: "keyboard"
+                         buttonSize: 32
+-                        visible: !demoMode && !pam.passwd.active && !root.unlocking && !pam.u2fPending
++                        visible: !root.hyprlandCustomLayout && !demoMode && !pam.passwd.active && !root.unlocking && !pam.u2fPending
+                         enabled: visible
+                         onClicked: {
+                             if (keyboardController.isKeyboardActive) {
+@@ -1384,7 +1933,7 @@
+                         height: 24
+                         radius: 12
+                         color: "transparent"
+-                        visible: !demoMode && (pam.passwd.active || root.unlocking)
++                        visible: !root.hyprlandCustomLayout && !demoMode && (pam.passwd.active || root.unlocking)
+ 
+                         DankIcon {
+                             anchors.centerIn: parent
+@@ -1465,7 +2014,7 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         iconName: "keyboard_return"
+                         buttonSize: 36
+-                        visible: (demoMode || (!pam.passwd.active && !root.unlocking && !pam.u2fPending))
++                        visible: !root.hyprlandCustomLayout && (demoMode || (!pam.passwd.active && !root.unlocking && !pam.u2fPending))
+                         enabled: !demoMode
+                         onClicked: {
+                             if (!demoMode && !root.unlocking && !pam.u2fPending) {
+@@ -1494,7 +2043,8 @@
+                 id: authFeedbackText
+ 
+                 Layout.fillWidth: true
+-                Layout.preferredHeight: text.length > 0 ? Math.min(implicitHeight, Math.ceil(Theme.fontSizeSmall * 4.5)) : 0
++                Layout.preferredHeight: root.hyprlandCustomLayout ? 0 : (text.length > 0 ? Math.min(implicitHeight, Math.ceil(Theme.fontSizeSmall * 4.5)) : 0)
++                visible: !root.hyprlandCustomLayout
+                 text: root.currentAuthFeedbackText()
+                 color: root.authFeedbackIsHint() ? Theme.outline : Theme.error
+                 font.pixelSize: Theme.fontSizeSmall
+@@ -1559,6 +2109,8 @@
+             anchors.margins: Theme.spacingXL
+             spacing: Theme.spacingL
+             visible: SettingsData.lockScreenShowSystemIcons
++            opacity: root.auxOpacity
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
+ 
+             Item {
+                 width: keyboardLayoutRow.width
+@@ -1632,12 +2184,12 @@
+                 height: 24
+                 color: Qt.rgba(255, 255, 255, 0.2)
+                 anchors.verticalCenter: parent.verticalCenter
+-                visible: MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer
++                visible: !root.hyprlandCustomLayout && MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer
+             }
+ 
+             Row {
+                 spacing: Theme.spacingS
+-                visible: MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer
++                visible: !root.hyprlandCustomLayout && MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer
+                 anchors.verticalCenter: parent.verticalCenter
+ 
+                 Item {
+@@ -1810,12 +2362,12 @@
+                 height: 24
+                 color: Qt.rgba(255, 255, 255, 0.2)
+                 anchors.verticalCenter: parent.verticalCenter
+-                visible: MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer && SettingsData.lockScreenShowWeather && WeatherService.weather.available
++                visible: !root.hyprlandCustomLayout && MprisController.activePlayer && SettingsData.lockScreenShowMediaPlayer && SettingsData.lockScreenShowWeather && WeatherService.weather.available
+             }
+ 
+             Row {
+                 spacing: Theme.spacingXS
+-                visible: SettingsData.lockScreenShowWeather && WeatherService.weather.available
++                visible: !root.hyprlandCustomLayout && SettingsData.lockScreenShowWeather && WeatherService.weather.available
+                 anchors.verticalCenter: parent.verticalCenter
+ 
+                 DankIcon {
+@@ -1839,7 +2391,7 @@
+                 height: 24
+                 color: Qt.rgba(255, 255, 255, 0.2)
+                 anchors.verticalCenter: parent.verticalCenter
+-                visible: SettingsData.lockScreenShowWeather && WeatherService.weather.available && (NetworkService.networkStatus !== "disconnected" || BluetoothService.enabled || (AudioService.sink && AudioService.sink.audio) || BatteryService.batteryAvailable)
++                visible: !root.hyprlandCustomLayout && SettingsData.lockScreenShowWeather && WeatherService.weather.available && (NetworkService.networkStatus !== "disconnected" || BluetoothService.enabled || (AudioService.sink && AudioService.sink.audio) || BatteryService.batteryAvailable)
+             }
+ 
+             Row {
+@@ -2033,17 +2585,270 @@
+             }
+         }
+ 
++        StyledText {
++            visible: root.hyprlandCustomLayout
++            anchors.left: parent.left
++            anchors.bottom: parent.bottom
++            anchors.leftMargin: 42
++            anchors.bottomMargin: 42
++            text: "phirios"
++            font.pixelSize: 30
++            font.family: root.hyprLockFontFamily
++            renderType: Text.NativeRendering
++            font.weight: Font.Medium
++            font.letterSpacing: 0.6
++            color: "white"
++            opacity: root.auxOpacity
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
++        }
++
++        Column {
++            visible: root.hyprlandCustomLayout && SettingsData.lockScreenShowMediaPlayer && MprisController.activePlayer?.trackTitle
++            anchors.right: parent.right
++            anchors.bottom: parent.bottom
++            anchors.rightMargin: 42
++            anchors.bottomMargin: 42
++            spacing: 10
++            opacity: root.auxOpacity
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
++
++            DragHandler {
++                target: null
++                xAxis.enabled: true
++                yAxis.enabled: false
++                onActiveChanged: {
++                    if (active)
++                        return;
++                    if (translation.x < -55 && (MprisController.activePlayer?.canGoNext ?? false))
++                        MprisController.next();
++                    else if (translation.x > 55 && (MprisController.activePlayer?.canGoPrevious ?? false))
++                        MprisController.previousOrRewind();
++                }
++            }
++
++            ClippingRectangle {
++                id: lockCoverArt
++                readonly property string artworkUrl: TrackArtService.resolvedArtUrl || MprisController.activePlayer?.trackArtUrl || ""
++                width: 250
++                height: 250
++                radius: 22
++                color: "transparent"
++                visible: artworkUrl !== "" && coverArt.status === Image.Ready
++                anchors.horizontalCenter: parent.horizontalCenter
++
++                Image {
++                    id: coverArt
++                    anchors.fill: parent
++                    source: lockCoverArt.artworkUrl
++                    fillMode: Image.PreserveAspectCrop
++                    smooth: true
++                }
++            }
++
++            Column {
++                spacing: 5
++                StyledText {
++                    text: MprisController.activePlayer?.trackTitle || ""
++                    font.pixelSize: 18
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                    elide: Text.ElideRight
++                    width: 250
++                }
++                StyledText {
++                    text: MprisController.activePlayer?.trackArtist || ""
++                    font.pixelSize: 14
++                    font.family: root.hyprLockFontFamily
++                    renderType: Text.NativeRendering
++                    color: "white"
++                    opacity: 0.72
++                    elide: Text.ElideRight
++                    width: 250
++                }
++                Row {
++                    spacing: 20
++                    anchors.horizontalCenter: parent.horizontalCenter
++
++                    Item {
++                        width: 40
++                        height: 40
++                        opacity: (MprisController.activePlayer?.canGoPrevious ?? false) ? 1 : 0.4
++                        DankIcon {
++                            anchors.centerIn: parent
++                            name: "skip_previous"
++                            size: 30
++                            color: "white"
++                        }
++                        MouseArea {
++                            anchors.fill: parent
++                            enabled: MprisController.activePlayer?.canGoPrevious ?? false
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: MprisController.previousOrRewind()
++                        }
++                    }
++                    Item {
++                        width: 40
++                        height: 40
++                        DankIcon {
++                            anchors.centerIn: parent
++                            name: MprisController.activePlayer?.playbackState === MprisPlaybackState.Playing ? "pause" : "play_arrow"
++                            size: 34
++                            color: "white"
++                        }
++                        MouseArea {
++                            anchors.fill: parent
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: MprisController.activePlayer?.togglePlaying()
++                        }
++                    }
++                    Item {
++                        width: 40
++                        height: 40
++                        opacity: (MprisController.activePlayer?.canGoNext ?? false) ? 1 : 0.4
++                        DankIcon {
++                            anchors.centerIn: parent
++                            name: "skip_next"
++                            size: 30
++                            color: "white"
++                        }
++                        MouseArea {
++                            anchors.fill: parent
++                            enabled: MprisController.activePlayer?.canGoNext ?? false
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: MprisController.next()
++                        }
++                    }
++                }
++            }
++        }
++
++        Item {
++            id: inlinePowerList
++            visible: root.hyprlandCustomLayout && SettingsData.lockScreenShowPowerActions && (root.inlinePowerVisible || opacity > 0.01)
++            enabled: root.inlinePowerVisible && root.auxOpacity > 0.5
++            opacity: root.inlinePowerVisible ? root.auxOpacity : 0
++            anchors.right: powerButton.left
++            anchors.rightMargin: 14
++            anchors.verticalCenter: parent.verticalCenter
++            width: 220
++            height: powerList.implicitHeight + 20
++            transform: Translate {
++                x: root.inlinePowerVisible ? 0 : 36
++                Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
++            }
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220; easing.type: Easing.InOutCubic } }
++
++            HoverHandler {
++                id: powerListHover
++                onHoveredChanged: {
++                    if (hovered)
++                        powerHoverCloseTimer.stop();
++                    else
++                        powerHoverCloseTimer.restart();
++                }
++            }
++
++            Column {
++                id: powerList
++                anchors.left: parent.left
++                anchors.right: parent.right
++                anchors.top: parent.top
++                anchors.margins: 10
++
++                Repeater {
++                    model: powerMenu.visibleActions
++                    Item {
++                        required property string modelData
++                        required property int index
++                        readonly property var actionData: powerMenu.getActionData(modelData)
++                        width: powerList.width
++                        height: 50
++
++                        Row {
++                            anchors.left: parent.left
++                            anchors.leftMargin: 14
++                            anchors.verticalCenter: parent.verticalCenter
++                            spacing: 12
++                            DankIcon {
++                                name: actionData.icon
++                                size: 22
++                                color: Theme.isLightMode ? Theme.surfaceText : "white"
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
++                            StyledText {
++                                text: actionData.label
++                                font.family: root.hyprLockFontFamily
++                                font.pixelSize: 16
++                                renderType: Text.NativeRendering
++                                color: Theme.isLightMode ? Theme.surfaceText : "white"
++                                anchors.verticalCenter: parent.verticalCenter
++                            }
++                        }
++
++                        Rectangle {
++                            anchors.left: parent.left
++                            anchors.right: parent.right
++                            anchors.bottom: parent.bottom
++                            height: 1
++                            visible: index < powerMenu.visibleActions.length - 1
++                            color: Theme.isLightMode ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(1, 1, 1, 0.42)
++                        }
++                        Rectangle {
++                            anchors.left: parent.left
++                            anchors.bottom: parent.bottom
++                            height: 2
++                            width: powerMenu.holdActionIndex === index ? parent.width * powerMenu.holdProgress : 0
++                            color: Theme.primary
++                        }
++                        MouseArea {
++                            anchors.fill: parent
++                            cursorShape: Qt.PointingHandCursor
++                            onPressed: {
++                                if (!root.demoMode)
++                                    powerMenu.startHold(modelData, index);
++                            }
++                            onReleased: powerMenu.cancelHold()
++                            onCanceled: powerMenu.cancelHold()
++                        }
++                    }
++                }
++            }
++        }
++
+         DankActionButton {
+-            anchors.bottom: parent.bottom
+-            anchors.left: parent.left
+-            anchors.margins: Theme.spacingXL
++            id: powerButton
++            anchors.bottom: root.hyprlandCustomLayout ? undefined : parent.bottom
++            anchors.left: root.hyprlandCustomLayout ? undefined : parent.left
++            anchors.right: root.hyprlandCustomLayout ? parent.right : undefined
++            anchors.verticalCenter: root.hyprlandCustomLayout ? parent.verticalCenter : undefined
++            anchors.rightMargin: root.hyprlandCustomLayout ? 36 : 0
++            anchors.leftMargin: root.hyprlandCustomLayout ? 0 : Theme.spacingXL
++            anchors.bottomMargin: root.hyprlandCustomLayout ? 0 : Theme.spacingXL
+             visible: SettingsData.lockScreenShowPowerActions
++            opacity: root.auxOpacity
++            Behavior on opacity { NumberAnimation { duration: root.unlocking ? 300 : 220 } }
+             iconName: "power_settings_new"
+-            iconColor: Theme.error
++            iconColor: root.hyprlandCustomLayout ? "white" : Theme.error
+             buttonSize: 40
++            HoverHandler {
++                id: powerButtonHover
++                enabled: root.hyprlandCustomLayout
++                onHoveredChanged: {
++                    if (hovered) {
++                        powerHoverCloseTimer.stop();
++                        powerMenu.updateVisibleActions();
++                        root.inlinePowerVisible = true;
++                    } else {
++                        powerHoverCloseTimer.restart();
++                    }
++                }
++            }
+             onClicked: {
+-                if (demoMode) {
+-                    log.debug("Demo: Power Menu");
++                if (root.hyprlandCustomLayout) {
++                    if (!root.inlinePowerVisible)
++                        powerMenu.updateVisibleActions();
++                    root.inlinePowerVisible = !root.inlinePowerVisible;
+                 } else {
+                     powerMenu.show();
+                 }
+@@ -2060,10 +2865,17 @@
+         target: root.pam
+ 
+         function onUnlockRequested() {
++            if (root.hyprlandCustomLayout)
++                unlockTransitionTimer.start();
+             root.unlocking = true;
+             lockerReadyArmed = false;
+-            passwordField.clear();
+-            root.unlockRequested();
++            if (root.hyprlandCustomLayout) {
++                root.wallpaperBlur = 0;
++                IdleService.prepareDesktopRevealRequested();
++            } else {
++                passwordField.clear();
++                root.unlockRequested();
++            }
+         }
+ 
+         function onStateChanged() {
+@@ -2073,6 +2885,11 @@
+             root.unlocking = false;
+             placeholderDelay.restart();
+             passwordField.clear();
++            if (root.hyprlandCustomLayout && (root.pam.state === "fail" || root.pam.state === "error")) {
++                root.failureGlow = true;
++                failureGlowTimer.restart();
++                passwordShake.restart();
++            }
+         }
+ 
+         function onU2fPendingChanged() {
+@@ -2084,7 +2901,7 @@
+         }
+ 
+         function onUnlockInProgressChanged() {
+-            if (!root.pam.unlockInProgress && root.unlocking)
++            if (!root.pam.unlockInProgress && root.unlocking && !unlockTransitionTimer.running)
+                 root.unlocking = false;
+         }
+     }
+@@ -2094,6 +2911,30 @@
+ 
+         interval: 4000
+         onTriggered: root.pamState = ""
++    }
++
++    Timer {
++        id: failureGlowTimer
++        interval: 1000
++        onTriggered: root.failureGlow = false
++    }
++
++    Timer {
++        id: powerHoverCloseTimer
++        interval: 180
++        onTriggered: {
++            if (!powerButtonHover.hovered && !powerListHover.hovered)
++                root.inlinePowerVisible = false;
++        }
++    }
++
++    Timer {
++        id: unlockTransitionTimer
++        interval: 350
++        onTriggered: {
++            passwordField.clear();
++            root.unlockRequested();
++        }
+     }
+ 
+     MouseArea {
+@@ -2106,8 +2947,9 @@
+         id: powerMenu
+         showLogout: true
+         onClosed: {
+-            if (!demoMode && passwordField && passwordField.forceActiveFocus) {
+-                Qt.callLater(() => passwordField.forceActiveFocus());
++            root.inlinePowerVisible = false;
++            if (!demoMode) {
++                Qt.callLater(() => root.focusPasswordField());
+             }
+         }
+         onSwitchUserRequested: {
+--- a/Modules/Lock/LockScreenDemo.qml
++++ b/Modules/Lock/LockScreenDemo.qml
+@@ -36,12 +36,18 @@
+         demoActive = false;
+     }
+ 
++    function wallpaperStatus(): string {
++        return demoContent.item ? JSON.stringify(demoContent.item.wallpaperPlaybackStatus()) : "null";
++    }
++
+     Loader {
++        id: demoContent
+         anchors.fill: parent
+         active: demoActive
+         sourceComponent: LockScreenContent {
+             demoMode: true
+             screenName: root.screen?.name ?? ""
++            onPasswordEdited: text => passwordBuffer = text
+             onUnlockRequested: root.hideDemo()
+         }
+     }
+--- a/Services/IdleService.qml
++++ b/Services/IdleService.qml
+@@ -56,6 +56,8 @@
+ 
+     signal lockRequested
+     signal fadeToLockRequested
++    signal manualFadeToLockRequested
++    signal prepareDesktopRevealRequested
+     signal cancelFadeToLock
+     signal dismissFadeToLock
+     signal fadeToDpmsRequested
+@@ -67,6 +69,7 @@
+     property var lockComponent: null
+     property bool monitorsOff: false
+     property bool isShellLocked: false
++    property bool manualLockHandoffHidden: false
+     property bool lockPowerOffRequested: false
+ 
+     function reapplyDpmsIfNeeded() {
