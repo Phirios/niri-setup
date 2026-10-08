@@ -1,0 +1,681 @@
+{
+  "dms_package": "dms-1.6.2-1.fc44.x86_64",
+  "agent_base": "2d749f3f31e9af29c349708840e8a52ec83b0ce3",
+  "files": [
+    {
+      "source": ".config/hypr/hyprland.lua",
+      "destination": "desktop/config/hypr/hyprland.lua",
+      "sha256": "23ca7fc9d815cba0511fa6064809f0ae06954029d9c14543a77a6c34d36d12fa"
+    },
+    {
+      "source": ".config/hypr/dms/colors.lua",
+      "destination": "desktop/config/hypr/dms/colors.lua",
+      "sha256": "7750e66657d30629bcb7da3175e3787f0a7570121849f089dbeef9a7f582f859"
+    },
+    {
+      "source": ".config/hypr/dms/binds.lua",
+      "destination": "desktop/config/hypr/dms/binds.lua",
+      "sha256": "4c355340870f253260df0c6adddd40433958452fecc1ac51aba71621297ab990"
+    },
+    {
+      "source": ".config/hypr/dms/binds-user.lua",
+      "destination": "desktop/config/hypr/dms/binds-user.lua",
+      "sha256": "ff41e936e70b4fd3c9adc6a10d0a9e83d3fd2bfcb0993b0e3709bfd09d49b864"
+    },
+    {
+      "source": ".config/hypr/dms/windowrules.lua",
+      "destination": "desktop/config/hypr/dms/windowrules.lua",
+      "sha256": "6e4403312b09e66fa77276390b08e7d558604bd072d731ae5fce31052a0c902b"
+    },
+    {
+      "source": ".config/hypr/dms/layout.lua",
+      "destination": "desktop/config/hypr/dms/layout.lua",
+      "sha256": "d57e908b0467b8e0742d2a65d0a71f1473a9455d123ffbe4fee837085801ca16"
+    },
+    {
+      "source": ".config/hypr/dms/outputs.lua",
+      "destination": "desktop/config/hypr/dms/outputs.lua",
+      "sha256": "a979bab89ecf0c31e44eec31e1831b7aed053a007503a581cb37d3d077f5f4fe"
+    },
+    {
+      "source": ".config/hypr/dms/cursor.lua",
+      "destination": "desktop/config/hypr/dms/cursor.lua",
+      "sha256": "32d708eb74924ae685d599c2bfad661f106cf637921c716b37fe2c8ca52a3727"
+    },
+    {
+      "source": ".config/hypr/custom/smart-resize.lua",
+      "destination": "desktop/config/hypr/custom/smart-resize.lua",
+      "sha256": "92689e1003c1c124e906139003b892a8dcd24776de6b306ee5f53854e9d9d620"
+    },
+    {
+      "source": ".config/niri/keybinds.kdl",
+      "destination": "desktop/config/niri/keybinds.kdl",
+      "sha256": "713cf9f595aaaf9a22fcd429eb859008fa1b30df31228dc7a6f95d827ad30748"
+    },
+    {
+      "source": ".config/niri/config-shm.kdl",
+      "destination": "desktop/config/niri/config-shm.kdl",
+      "sha256": "37eb1bd0256f79d45da9040a77cfa0a6dd0b9706248c6bdd756740baafbc461d"
+    },
+    {
+      "source": ".config/niri/config.kdl",
+      "destination": "desktop/config/niri/config.kdl",
+      "sha256": "c26f537ee7211ad36ea946a3dfe6f4ab2266f55a03cb62748e7b8a06bd8ce3d5"
+    },
+    {
+      "source": ".config/niri/dms-ai-agent.kdl",
+      "destination": "desktop/config/niri/dms-ai-agent.kdl",
+      "sha256": "b70b246635e4e41f8647f99a02d1c07a4cf90a7791139c5108ee7977d7acff36"
+    },
+    {
+      "source": ".config/niri/dms/outputs.kdl",
+      "destination": "desktop/config/niri/dms/outputs.kdl",
+      "sha256": "17a3fe6364362d8c675c09f2d3233a450fcfe68d68b2638bde76595f67f2b971"
+    },
+    {
+      "source": ".config/niri/dms/colors.kdl",
+      "destination": "desktop/config/niri/dms/colors.kdl",
+      "sha256": "58fcff5ab18345c3d0261ce2a061403a7ac390bbbb496a1244136fdd2d8c6a9c"
+    },
+    {
+      "source": ".config/niri/dms/layout.kdl",
+      "destination": "desktop/config/niri/dms/layout.kdl",
+      "sha256": "75070057feddb2e2ec788276190e894183afde6a71a2de54050d77c33254113a"
+    },
+    {
+      "source": ".config/niri/dms/alttab.kdl",
+      "destination": "desktop/config/niri/dms/alttab.kdl",
+      "sha256": "5e51addaad07890d2a114ef018e0f3b83c9f3d2e709338337ef649693520b93f"
+    },
+    {
+      "source": ".config/niri/dms/input.kdl",
+      "destination": "desktop/config/niri/dms/input.kdl",
+      "sha256": "4080161170158fdedb746a5e94ec3b42e0ecae3b36c00f0f977550e1f6436209"
+    },
+    {
+      "source": ".config/niri/dms/cursor.kdl",
+      "destination": "desktop/config/niri/dms/cursor.kdl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".config/niri/dms/windowrules.kdl",
+      "destination": "desktop/config/niri/dms/windowrules.kdl",
+      "sha256": "ed8c9997a621761e12c1f5ff144cb892d6c75615f37144d0d7b1211729c01967"
+    },
+    {
+      "source": ".config/niri/dms/wpblur.kdl",
+      "destination": "desktop/config/niri/dms/wpblur.kdl",
+      "sha256": "d591cef7c8d1003bda6aaff41d9598e5400d5cac68e121b09e61078c590d2a51"
+    },
+    {
+      "source": ".config/niri/dms/binds.kdl",
+      "destination": "desktop/config/niri/dms/binds.kdl",
+      "sha256": "32cae5c2676a411aaf02fc4c09530c4f5445e8d28ec01089e0057e2c46870b72"
+    },
+    {
+      "source": ".config/niri/custom/binds.kdl",
+      "destination": "desktop/config/niri/custom/binds.kdl",
+      "sha256": "ea86a763f3872c4d6f0bacc817a74d9567e09745821de6f2cce2c0994304c90b"
+    },
+    {
+      "source": ".config/niri/custom/privacy.kdl",
+      "destination": "desktop/config/niri/custom/privacy.kdl",
+      "sha256": "cfae983f26040fb4b82321ab516a6e626136f2c9c4d921cb638db5e4f31f4628"
+    },
+    {
+      "source": ".config/hypr/hyprlock.conf",
+      "destination": "desktop/config/hypr/hyprlock.conf",
+      "sha256": "344850aeac2ee50a8d77a46b37d0c8777fd28142bf645b95d156538a1b865447"
+    },
+    {
+      "source": ".config/hypr/hyprpaper.conf",
+      "destination": "desktop/config/hypr/hyprpaper.conf",
+      "sha256": "6b1fed9d9805a0118ad07a1090e335f02c16e0e53df33d6665808d16238ddc44"
+    },
+    {
+      "source": ".local/bin/hyprlock-now-playing",
+      "destination": "desktop/bin/hyprlock-now-playing",
+      "sha256": "1edeba3295f8c80c1125c2ff0030b1eca2623273611ff2bbf691737c45e528b8"
+    },
+    {
+      "source": ".local/bin/hypr-translate-popup",
+      "destination": "desktop/bin/hypr-translate-popup",
+      "sha256": "0d3b648f53bd5577a83be3576b3d2d2aa02efa214dc5131daa22e9f2ee8ff17c"
+    },
+    {
+      "source": ".local/bin/hypr-emoji-toggle",
+      "destination": "desktop/bin/hypr-emoji-toggle",
+      "sha256": "9b70d4e939054bfb2f5e73dee604d677c7b97ec144d7fab7f06773bf8f5b4dd2"
+    },
+    {
+      "source": ".local/bin/hypr-next-empty-workspace",
+      "destination": "desktop/bin/hypr-next-empty-workspace",
+      "sha256": "b7fed9877ccf9481357911ed52383fe791b948ebad56d2e4a7494c0061369122"
+    },
+    {
+      "source": ".local/bin/hypr-smart-resize",
+      "destination": "desktop/bin/hypr-smart-resize",
+      "sha256": "a3b9247c07e4d425e9c277b2610f00a7f422dd38e4ecae0a83f69981a9e35f75"
+    },
+    {
+      "source": ".local/bin/hypr-lock-window-opacity",
+      "destination": "desktop/bin/hypr-lock-window-opacity",
+      "sha256": "8850410b51a9b35f2c2a16a15728c57c2f762712138bad64636d2c8cd4a311ea"
+    },
+    {
+      "source": ".local/bin/hypr-dms-lock",
+      "destination": "desktop/bin/hypr-dms-lock",
+      "sha256": "d51b890aa82617d3868ceb810b82ba1f9a35af589f8ae5ecb74dda91d04ae166"
+    },
+    {
+      "source": ".local/bin/dms-live-wallpaper-load",
+      "destination": "desktop/bin/dms-live-wallpaper-load",
+      "sha256": "7c01648a0c29b5448ffbb2abec205a1ddee59b11c85109a1df942c5a4fb68817"
+    },
+    {
+      "source": ".local/bin/dms-live-wallpaper-thumbnails",
+      "destination": "desktop/bin/dms-live-wallpaper-thumbnails",
+      "sha256": "47f2b5f7da1168be6e324d6d2e89fb0a614ecebeb129229f6e45987483107c60"
+    },
+    {
+      "source": ".local/bin/dms-live-wallpaper-cycle",
+      "destination": "desktop/bin/dms-live-wallpaper-cycle",
+      "sha256": "faf5ab1fec02c810c288a810b2543ca3daeb11f6ff75b994509ae1ddeb1f332b"
+    },
+    {
+      "source": ".local/bin/dms-wallpaper-bar-brightness",
+      "destination": "desktop/bin/dms-wallpaper-bar-brightness",
+      "sha256": "681af30bc3b28369c625171541c49eeff6b2787e5bb6c3f1010da7df16013c11"
+    },
+    {
+      "source": ".local/bin/dms-live-wallpaper-palette",
+      "destination": "desktop/bin/dms-live-wallpaper-palette",
+      "sha256": "ca66814b6025196b9313040caf7507273a7c4b3e0d1fbde7aec51411e6d122d8"
+    },
+    {
+      "source": ".local/bin/dms-hypr-colors-reload",
+      "destination": "desktop/bin/dms-hypr-colors-reload",
+      "sha256": "98b346f535bffcdc6706af145bef133eed9dc4e507e9588346a663fa4b5c7dc9"
+    },
+    {
+      "source": ".local/bin/reboot-windows",
+      "destination": "desktop/bin/reboot-windows",
+      "sha256": "ca7c17a424c9300f15574e6052a981937f164ca3042ab15c9e90607552b16827"
+    },
+    {
+      "source": ".local/share/hypr-smart-resize/resize.py",
+      "destination": "desktop/share/hypr-smart-resize/resize.py",
+      "sha256": "f3c059203ef06a99348ec26612a8368ef7c2f4c5713618adb86ba03a181178f7"
+    },
+    {
+      "source": ".local/share/hypr-smart-resize/test_resize.py",
+      "destination": "desktop/share/hypr-smart-resize/test_resize.py",
+      "sha256": "903c6db07177eac9e29ec7c2d14e661756003eec7e812217dcae4fa363c6958b"
+    },
+    {
+      "source": ".local/share/hypr-smart-resize/README.md",
+      "destination": "desktop/share/hypr-smart-resize/README.md",
+      "sha256": "1a46c569602d6168bf96ae08da63b9e1528eaa7ae63df674f357cf0d1d550e66"
+    },
+    {
+      "source": ".local/lib/desktop-idle-guard/media.py",
+      "destination": "desktop/lib/desktop-idle-guard/media.py",
+      "sha256": "ed773845e3035d9e06a23717121f6cd21def39794575c09b377e58a945127772"
+    },
+    {
+      "source": ".config/systemd/user/hyprland-session.target",
+      "destination": "desktop/config/systemd/user/hyprland-session.target",
+      "sha256": "a94cf189f2d19298eaf74dad1bdc3a9576b78d429fe32bbb69bd7e701a40bc1a"
+    },
+    {
+      "source": ".config/systemd/user/dms-hypr-colors.path",
+      "destination": "desktop/config/systemd/user/dms-hypr-colors.path",
+      "sha256": "fb5164e576a2984ca13c699cdcc067bb0db7cb45d0571514f5ea223d30deddf1"
+    },
+    {
+      "source": ".config/systemd/user/dms-hypr-colors.service",
+      "destination": "desktop/config/systemd/user/dms-hypr-colors.service",
+      "sha256": "3a8c48698fe8d9a936574e2bfe80edc8499841a72dd9dfa3c734068e39e3f5c4"
+    },
+    {
+      "source": ".config/systemd/user/video-idle-inhibit.service",
+      "destination": "desktop/config/systemd/user/video-idle-inhibit.service",
+      "sha256": "8cf49c38e59b0b8cddda6382ad583d50b7dc2c88d304ef2cb8c67f85bf14116d"
+    },
+    {
+      "source": ".config/DankMaterialShell/settings.json",
+      "destination": "desktop/shell.json",
+      "sha256": "ab0a9c2b7a3e89a5a73d69eff27df97f13ad5bef9b969de5e9a9ca61da7edafc"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugin_settings.json",
+      "destination": "desktop/plugins.json",
+      "sha256": "4c90fc16cab13aa46e73e0a8dbb484b0bca10cf26f5ca9697d2c3890370f5aa2"
+    },
+    {
+      "source": ".config/DankMaterialShell/themes/ink.json",
+      "destination": "desktop/config/DankMaterialShell/themes/ink.json",
+      "sha256": "4a8faaac9dd5b904c35e57440cbead45200f339e01e1ad500d37990a131653fd"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/liveWallpaper/LiveWallpaperWidget.qml",
+      "destination": "plugins/liveWallpaper/LiveWallpaperWidget.qml",
+      "sha256": "3c1601b703aca5d4f61f3786c41b043a5efd9ac6ebfbffab2848fb5d07a926b9"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/liveWallpaper/LiveWallpaperDaemon.qml",
+      "destination": "plugins/liveWallpaper/LiveWallpaperDaemon.qml",
+      "sha256": "1408c443c180806b1dafbbb10fbefa5c4fd4fbd972d68a8efc87864e07dfa599"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/liveMode/LiveService.qml",
+      "destination": "plugins/liveMode/LiveService.qml",
+      "sha256": "aff2065fcc91b24a9db532d7b9c833e2604828d1261e6754f7b4a6ecfb8f5283"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/liveMode/LiveWidget.qml",
+      "destination": "plugins/liveMode/LiveWidget.qml",
+      "sha256": "b111cc12f90a631b9c50921d0da43ebf561fd7047df2700d5e0071f3210c319a"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/liveMode/live.js",
+      "destination": "plugins/liveMode/live.js",
+      "sha256": "fea8349530b3acd2c2757a5be678e011e162adb823532484d281a5b5efc3d7b7"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/AiLimitSettings.qml",
+      "destination": "desktop/plugins/aiLimitCounter/AiLimitSettings.qml",
+      "sha256": "24dfb7766d4b8ef897b727530db39cd190905d0abc6faff11fa90a73ef437d57"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/AiLimitWidget.qml",
+      "destination": "desktop/plugins/aiLimitCounter/AiLimitWidget.qml",
+      "sha256": "e4b846a3dd84facaf447330f7b24427ea7168c1c7e162276ac1b6c192bdb8777"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/LimitRing.qml",
+      "destination": "desktop/plugins/aiLimitCounter/LimitRing.qml",
+      "sha256": "659b138b8469292d078ac63513dc3fc7baac18b1e6ac82a7be9a070f90481e75"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/LimitRow.qml",
+      "destination": "desktop/plugins/aiLimitCounter/LimitRow.qml",
+      "sha256": "179bc922a33c990ab5d02bd39278d5606d23560e4b8412d2ab821cbd883fe84c"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/LimitService.qml",
+      "destination": "desktop/plugins/aiLimitCounter/LimitService.qml",
+      "sha256": "7535f909937ec6d50c63ace8f3841028fc4a9449fbb33cf5f57e889cb0801cdf"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/format.js",
+      "destination": "desktop/plugins/aiLimitCounter/format.js",
+      "sha256": "0b40739e51ee54b059e0765ca83adaefabd6a959f7e9b4f262d0584d374867d9"
+    },
+    {
+      "source": ".config/DankMaterialShell/plugins/aiLimitCounter/plugin.json",
+      "destination": "desktop/plugins/aiLimitCounter/plugin.json",
+      "sha256": "fba145139e552272d7cc1c66af9b8ff61270071fba1811a553dd6be740653a68"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Common/CheatsheetKeys.js",
+      "patch_group": "dms-keybinds",
+      "sha256": "3f236eb566da0e5e82534b4aab1f55308f455f2fb317cfba9148250c66f3aeb3"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Common/SettingsData.qml",
+      "patch_group": "dms-core",
+      "sha256": "9bf7d96a5cb106a376ae1d2cdc3bb2166c72560b6ff4e820cafdf56ec94a0042"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Common/Theme.qml",
+      "patch_group": "dms-core",
+      "sha256": "7ab777a00dfe3533759c84c405f13104707d6f259c18b10c940a51fb167e5785"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Common/settings/SettingsSpec.js",
+      "patch_group": "dms-core",
+      "sha256": "b370ef63051592d33855563aa7c9add8368f156068c4b69a53e0f0d03fa3d38c"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/DMSShell.qml",
+      "patch_group": "dms-core",
+      "sha256": "e8c803248ceb4b0889a4480d9b93cb2480f1e46b0d4405bd2f291b1a3758a5a1"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/DankCommon/Widgets/DankTextField.qml",
+      "patch_group": "dms-core",
+      "sha256": "74aeda2e86a5dda54cdca1bbd636798a0fc9ab111b30bbbda37f51d69f229f80"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modals/KeybindsContent.qml",
+      "patch_group": "dms-keybinds",
+      "sha256": "b37d1f3d8552382b83b90f8408910c1f10f92454b20b603f501e72dd3f150909"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modals/KeybindsModalOverlay.qml",
+      "patch_group": "dms-keybinds",
+      "sha256": "f5cab421f93cc82204532b2eb9f51bbc083d4181c8e88a7c496f5f7096c69a43"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/ControlCenter/BuiltinPlugins/TailscaleWidget.qml",
+      "patch_group": "dms-tailscale",
+      "sha256": "2bd31e02aee936f644b80d59ce0d092eada034ba5ab572e6402765b69916b51c"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/ControlCenter/utils/detailHeight.js",
+      "patch_group": "dms-tailscale",
+      "sha256": "393b32a748b5e903690b39f4cbb240c77aa42a8468431b1ff5eec5252bd0709e"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/DankBarWindow.qml",
+      "patch_group": "dms-bar",
+      "sha256": "e17e7fc57a40cb18c414d561a0681a28506b0fa7f142c527c118b4feb147038b"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/LeftSection.qml",
+      "patch_group": "dms-bar",
+      "sha256": "bf09e36cdbb8c4ac5959d147d90a53b6660a4770dc0c89aac351c04d8407288a"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/RightSection.qml",
+      "patch_group": "dms-bar",
+      "sha256": "dfa66c429e43dfcebf109396d3f008f3b18d186b40dd2a4bd53f77c2a63a3268"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/AudioVisualization.qml",
+      "patch_group": "dms-bar",
+      "sha256": "48315afe35e0a0d96690cc915f12b35e1b81184fe465a3b0e274cf60ca5d5b99"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/Battery.qml",
+      "patch_group": "dms-bar",
+      "sha256": "a754917d8f826ac95291fd6498509fd63545b6faf30481df41600023c692cab1"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/CapsLockIndicator.qml",
+      "patch_group": "dms-bar",
+      "sha256": "25176fdaf0e2d39b07c9990440ca4da9049ad98f9fee5565fec1cb30fbf04275"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/ClipboardButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "734bad66f4b0d0d2f418949b374edd5b38d15c5a8957c1d79b04d35b253a1ca3"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/Clock.qml",
+      "patch_group": "dms-bar",
+      "sha256": "c414912d84f256163289e4037cbdccabba824e303bbc863ccc070112adee04af"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/ColorPicker.qml",
+      "patch_group": "dms-bar",
+      "sha256": "bd3a0dc1ad1d6d3eb2440e8a0ee5f930c2b0c0c27f169a79b9c101ac35023f66"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/ControlCenterButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "63b132716288a9c56e8315df0342e889de72d4c29a1cb3728e28224c88175bc7"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/CpuMonitor.qml",
+      "patch_group": "dms-bar",
+      "sha256": "c5595db0908309720551d6ef06da3283a8aa533e85949f9dfacaf5a06b3d0a59"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/CpuTemperature.qml",
+      "patch_group": "dms-bar",
+      "sha256": "901b8dcaba132f1f4c74168a3d256a9b6c715d47bba5b6da61e5d988b3f9920b"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/DWLLayout.qml",
+      "patch_group": "dms-bar",
+      "sha256": "1212d1ac20ef1ea0e3f589c3f22175486dfaaf584b62ca9e54877320213754d7"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/DiskUsage.qml",
+      "patch_group": "dms-bar",
+      "sha256": "7eb4fbf5a4758172965bf4f06faf697b73144abb67ada848997783ae2b8bbe6d"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/FocusedApp.qml",
+      "patch_group": "dms-bar",
+      "sha256": "73d27b78dc8cdb5aa42266eef87c3c447f06ea114d1123ecdde03505f24516ab"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/GpuTemperature.qml",
+      "patch_group": "dms-bar",
+      "sha256": "a64f3fe61a715b122540b5bcdb5d8d7b64fec0718225617fe7c07fc316f9856a"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/IdleInhibitor.qml",
+      "patch_group": "dms-bar",
+      "sha256": "9ed3ad89411fd4d71e22be0decb174ac5f2e526b724f176e6b3ac14418e56717"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/KeyboardLayoutName.qml",
+      "patch_group": "dms-bar",
+      "sha256": "3e12617549cafae96957e4d9c7f04851fe0565120c33103f849cc36315922df4"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/LauncherButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "01662dc62f1f6e82c179bbb81e064150745f77edc1570843e728b819f49131d3"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/Media.qml",
+      "patch_group": "dms-bar",
+      "sha256": "18734e8a558608b60fb88ffde800b48bdc79dcec4e84c3fd34719ac1737c8fe6"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/NetworkMonitor.qml",
+      "patch_group": "dms-bar",
+      "sha256": "7ca2d4b763c246711204591ef180252c56325412da00a8e26b02b55300de08dc"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/NotepadButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "2825f0e5a72fdaf8627db01bfee7c73a417ee1aa8d6ddc3912cd59627cafe77a"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/NotificationCenterButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "f4f96ca15bce17cfb968a2f70b6a75f674a8bd9147ff59397826177c78fde8ef"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/PowerMenuButton.qml",
+      "patch_group": "dms-bar",
+      "sha256": "e9e2c59723e29fee465c0d220de1cbc76a4ea3b2d87a7936193243a763f5e2ed"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/PrivacyIndicator.qml",
+      "patch_group": "dms-bar",
+      "sha256": "4ad9b747cf204f32b70d5193cb674e3d72329c2fbb37da76223c7463f2384d1a"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/RamMonitor.qml",
+      "patch_group": "dms-bar",
+      "sha256": "991e09007f8df9dd2656c5df4355f9f431e2eca84dfe56221414c5f458098179"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/RunningApps.qml",
+      "patch_group": "dms-bar",
+      "sha256": "a73fd1a54dece4dc05f281bca8210eedb87c2271c68eae7072fed751fa3e9e5c"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/SystemTrayBar.qml",
+      "patch_group": "dms-bar",
+      "sha256": "b5d7775258bf2c06d970671cb359f324232551d917716411379bec44c4345a31"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/SystemUpdate.qml",
+      "patch_group": "dms-bar",
+      "sha256": "3b013c964c7ca567b28eb491f21ca345120ebdb7e82ac51564d32cc3b50219fe"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/Vpn.qml",
+      "patch_group": "dms-bar",
+      "sha256": "2ffab6a8f58c7e96620ec6de7482d58c00bbe3dd1bf8202c3a558341cfb41054"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/Weather.qml",
+      "patch_group": "dms-bar",
+      "sha256": "1f962bd3a244b66965089e77f3d442468db160b8d1f8a2e02eb8cdc0d1352db2"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankBar/Widgets/WorkspaceSwitcher.qml",
+      "patch_group": "dms-bar",
+      "sha256": "819c00269431246503083749a2d20564e3d26e284b6f938b479b3d687cc3d948"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/LyricGlowChunk.qml",
+      "patch_group": "dms-media",
+      "sha256": "3309e41be241255670da1cba66bab02d3d6f0b476d73c322dd8693408a1c1bc9"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/MediaLyricsPanel.qml",
+      "patch_group": "dms-media",
+      "sha256": "0f397d47eee808f49358050ecae10f9cd1c124808bcc14bf0e9a2575bbc2edc9"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/MediaPlayerDashChrome.qml",
+      "patch_group": "dms-media",
+      "sha256": "1d86fa203cb9fe67287c814fdee927f3eb03e8c7f62bb390b2134a4e7c42eb86"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/MediaPlayerIslandChrome.qml",
+      "patch_group": "dms-media",
+      "sha256": "77134fce48194b5611af135bd8e09c2508e642899a546d9e56c3fa9165eea65f"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/WallpaperTab.qml",
+      "patch_group": "dms-wallpaper",
+      "sha256": "d7e23b0d26db7485ced59c0778929701ddbb5a5b0cedebb0abf725719b120ba1"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/lyrics-fade.frag",
+      "patch_group": "dms-media",
+      "sha256": "a47e0b04e8953f67b7a64f5a47645da0b9624579ede10c1a4bb1dad5b82a6dee"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/lyrics-wipe.frag",
+      "patch_group": "dms-media",
+      "sha256": "ee21f2964cd5313adb1c04c061fa23a522276a7fff25d0b3efe372b1fb5f89f3"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankDash/lyrics.py",
+      "patch_group": "dms-media",
+      "sha256": "5fb43589f1eaba501d361a686bbe3a644a077219ff245f7cc1697b89982d0e14"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/Activities/HomeCompact.qml",
+      "patch_group": "dms-bar",
+      "sha256": "f633ec5ac84254ec6b605e1bee58cd979a45941b883acf561b80dd95a0e7106f"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/Activities/MediaCompact.qml",
+      "patch_group": "dms-bar",
+      "sha256": "cedfbb87bda95804732c3408af5312ecadb448726efd920adc9b5b8a5142b3a0"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/DankIslandHostWindow.qml",
+      "patch_group": "dms-bar",
+      "sha256": "4136e1caec0e415b908ae44860516873694897eb6c2fa50133a236a10c765f4c"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/DankIslandSurface.qml",
+      "patch_group": "dms-bar",
+      "sha256": "e2e0972ae89aa27c7c5817b8d0f0248ee640e01cd2c83611ff7bd3cfa4462359"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/IslandContentHost.qml",
+      "patch_group": "dms-bar",
+      "sha256": "7c863565a91dabed5cdbdcade11a0ff270da8d8b4f148417ad3eaa2b33536063"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/IslandMediaSource.qml",
+      "patch_group": "dms-bar",
+      "sha256": "e3fe37c6770916bd4f9d3f437e5cb1ec78703463042a12ca71919cbedea61503"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/IslandSatelliteChrome.qml",
+      "patch_group": "dms-bar",
+      "sha256": "f919d2e28d9574104bc0088e874ab168e5fccef2f7cd2f5eef74813ae7b039a4"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/DankIsland/IslandSatelliteHost.qml",
+      "patch_group": "dms-bar",
+      "sha256": "d2ca206bcf58cdcad2dde442f2b4aaa633f6b42ce3c2fffe5f5703cfc4e48675"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Lock/FadeToLockWindow.qml",
+      "patch_group": "dms-lock",
+      "sha256": "ce6d3b3363334121ba6078a28ad0f8cb1db6b7e5ce0181832b6d9deedacd4aac"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Lock/Lock.qml",
+      "patch_group": "dms-lock",
+      "sha256": "9c1cc15be891cf75476fceadd78627b1c752eaada6ca48c380469ef06c6561e9"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Lock/LockScreenContent.qml",
+      "patch_group": "dms-lock",
+      "sha256": "a0fde29a6510448bd333c748595c483ea283b446902a9f0309c2c6e9bba9cd36"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Lock/LockScreenDemo.qml",
+      "patch_group": "dms-lock",
+      "sha256": "40114b353181596e3d6799afdb350cd2d8b5ca938987c9284c0dd8cfa738070c"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Plugins/BasePill.qml",
+      "patch_group": "dms-bar",
+      "sha256": "7c07c0fd7c9d4488af792450585b99b6791ec6e91cc80c79e1cedd6d2af05db9"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Plugins/PluginComponent.qml",
+      "patch_group": "dms-bar",
+      "sha256": "b2304ce354eff532d722e2331ef64297f61559c7826bb9a93aab04fd238a761b"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Modules/Settings/MediaPlayerTab.qml",
+      "patch_group": "dms-media",
+      "sha256": "08665506ed72ea1e73c0f225d71e3976ca85f0a02e1d00f78035add3578b3828"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Services/CavaService.qml",
+      "patch_group": "dms-media",
+      "sha256": "ac9edb560dafc10164b183b82981b64623c4cb656884e9f1eb38f85aabb99436"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Services/IdleService.qml",
+      "patch_group": "dms-lock",
+      "sha256": "8ca52944374f22ed15909687895539c2c027cf27edd8cb658d68825ab2a0ff86"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Services/MediaAccentService.qml",
+      "patch_group": "dms-media",
+      "sha256": "346088c6edd31d4fc436f22c1e10a1eea05d6e98f8660bf4052731510046641d"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Services/TailscaleService.qml",
+      "patch_group": "dms-tailscale",
+      "sha256": "0a6db4e72690fcf29867b581b3819d3c179858aa9acd2dc12185ef30215665b2"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Widgets/DankFocusGrab.qml",
+      "patch_group": "dms-core",
+      "sha256": "bb0661a9de4006d4d7065762efbe9db60f9d1dba564c9b924efd7436ee0cd7ce"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Widgets/DankPopout.qml",
+      "patch_group": "dms-core",
+      "sha256": "703e2699f2f2ee7996a4b151c6e0a87b20ad2476bc9353d785f2af93976cbe07"
+    },
+    {
+      "source": ".local/share/dms-shell-custom/Widgets/ScrollingText.qml",
+      "patch_group": "dms-media",
+      "sha256": "33439028989c646b5d92f5154bdbe6e92821e37d6015027973f722d01fc222dd"
+    }
+  ]
+}

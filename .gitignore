@@ -1,2 +1,14 @@
 __pycache__/
 *.pyc
+
+# Local desktop runtime and generated artifacts
+**/target/
+**/__pycache__/
+*.pyc
+*.frag.qsb
+*.bak*
+*.pre-*
+.env
+.env.*
+auth.json
+credentials.json

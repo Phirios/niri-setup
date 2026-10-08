@@ -1,4 +1,13 @@
-# niri setup
+# Phirios desktop setup
+
+
+This fork preserves my Fedora Niri/Hyprland and DankMaterialShell desktop. My current
+configuration lives in [`desktop/`](desktop/README.md), rather than `profiles/piroz/`.
+The shared installer remains available; it does not yet restore the complete Hyprland
+snapshot. Read the capture notes before installing on another machine.
+
+`origin` is `Phirios/niri-setup`; `upstream` is `firatege/niri-setup`. Personal choices stay
+in this fork. Reusable feature commits can be submitted upstream separately later.
 
 One script that sets up a keyboard-driven desktop on Fedora:
 [niri](https://github.com/niri-wm/niri) with
@@ -13,7 +22,7 @@ so KDE or GNOME is one logout away.
 ```bash
 git clone https://github.com/<you>/niri-setup      # your fork, see "Personal profiles"
 cd niri-setup
-./install.sh --profile yourname    # or without --profile for the shared setup only
+./install.sh    # installs the shared Niri baseline; see desktop/ for personal customizations
 ```
 
 Then log out, pick **niri** in the session menu of the login screen, and log in.
