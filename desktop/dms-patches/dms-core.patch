@@ -1,0 +1,279 @@
+--- a/Common/SettingsData.qml
++++ b/Common/SettingsData.qml
+@@ -512,6 +512,8 @@
+     property bool audioVisualizerEnabled: true
+     property bool mediaUseAlbumArtAccent: false
+     property bool mediaWallpaperEnabled: true
++    property bool mediaCenterAmbientEnabled: false
++    property bool mediaLyricsMusixmatchEnabled: false
+     property bool appleMusicAnimatedArtEnabled: false
+     property string audioScrollMode: "volume"
+     property int audioWheelScrollAmount: 5
+--- a/Common/Theme.qml
++++ b/Common/Theme.qml
+@@ -37,6 +37,72 @@
+     property string currentThemeCategory: "generic"
+     property bool isLightMode: typeof SessionData !== "undefined" ? SessionData.isLightMode : false
+     property bool colorsFileLoadFailed: false
++
++    // Transparent bar foregrounds use wallpaper brightness, independently of app theme mode.
++    property var barWallpaperLight: ({})
++    readonly property var barLightPalette: buildExtractedDynamicMode("light", "Bar Light")
++    readonly property var barDarkPalette: buildExtractedDynamicMode("dark", "Bar Dark")
++
++    function barIsLight(item) {
++        var node = item;
++        while (node) {
++            if (node.barConfig !== undefined && node.barConfig) {
++                if (!node.barConfig.noBackground)
++                    return isLightMode;
++                return barWallpaperLight[node.section || "center"] ?? isLightMode;
++            }
++            node = node.parent;
++        }
++        return isLightMode;
++    }
++
++    function barColor(key, item) {
++        var node = item;
++        while (node && !(node.barConfig !== undefined && node.barConfig))
++            node = node.parent;
++        if (!node || !node.barConfig.noBackground || currentTheme !== dynamic)
++            return root[key];
++        const palette = barIsLight(node) ? barLightPalette : barDarkPalette;
++        if (key === "widgetTextColor")
++            return SettingsData.widgetColorMode === "colorful" ? palette.primary : palette.surfaceText;
++        if (key === "widgetIconColor") return palette.surfaceText;
++        if (key === "widgetInactiveIconColor") return withAlpha(palette.surfaceText, 0.6);
++        if (key === "surfaceTextAlpha") return withAlpha(palette.surfaceText, 0.3);
++        if (key === "surfaceTextLight") return withAlpha(palette.surfaceText, 0.06);
++        if (key === "surfaceTextSecondary") return withAlpha(palette.surfaceText, 0.6);
++        if (key === "surfaceTextMedium") return withAlpha(palette.surfaceText, 0.7);
++        if (key === "widgetBaseHoverColor") return withAlpha(blend(palette.surfaceContainerHigh, palette.primary, 0.1), 0.9);
++        return palette[key] !== undefined ? palette[key] : root[key];
++    }
++
++    onRawWallpaperPathChanged: barBrightnessTimer.restart()
++    Timer {
++        id: barBrightnessTimer
++        interval: 150
++        running: true
++        onTriggered: {
++            if (root.rawWallpaperPath && !root.rawWallpaperPath.startsWith("#")) {
++                if (barBrightnessProcess.running) {
++                    restart();
++                    return;
++                }
++                barBrightnessProcess.command = ["/home/phirios/.local/bin/dms-wallpaper-bar-brightness", Paths.expandTilde(root.rawWallpaperPath)];
++                barBrightnessProcess.running = true;
++            } else {
++                root.barWallpaperLight = ({});
++            }
++        }
++    }
++    Process {
++        id: barBrightnessProcess
++        stdout: StdioCollector {
++            onStreamFinished: {
++                try { root.barWallpaperLight = JSON.parse(text); }
++                catch (e) { root.barWallpaperLight = ({}); }
++            }
++        }
++    }
++
+ 
+     readonly property string dynamic: "dynamic"
+     readonly property string custom: "custom"
+@@ -2311,6 +2377,10 @@
+             return "dark";
+         }
+ 
++        function barContrast(): string {
++            return JSON.stringify({wallpaper: root.rawWallpaperPath, lightForegroundPalette: root.barWallpaperLight, systemMode: root.isLightMode ? "light" : "dark"});
++        }
++
+         function getMode(): string {
+             return root.isLightMode ? "light" : "dark";
+         }
+--- a/Common/settings/SettingsSpec.js
++++ b/Common/settings/SettingsSpec.js
+@@ -230,6 +230,8 @@
+     audioVisualizerEnabled: { def: true },
+     mediaUseAlbumArtAccent: { def: false },
+     mediaWallpaperEnabled: { def: true },
++    mediaCenterAmbientEnabled: { def: false },
++    mediaLyricsMusixmatchEnabled: { def: false },
+     appleMusicAnimatedArtEnabled: { def: false },
+     audioScrollMode: { def: "volume" },
+     audioWheelScrollAmount: { def: 5 },
+--- a/DMSShell.qml
++++ b/DMSShell.qml
+@@ -2,6 +2,7 @@
+ 
+ import QtQuick
+ import Quickshell
++import Quickshell.Io
+ import qs.Common
+ import qs.Modals
+ import qs.Modals.Changelog
+@@ -34,6 +35,28 @@
+     readonly property var _displayServiceRef: DisplayService
+ 
+     property var core: null
++    property bool manualLockHandoffStarted: false
++
++    Process {
++        id: hideDesktopWindows
++        command: [Quickshell.env("HOME") + "/.local/bin/hypr-lock-window-opacity", "hide"]
++        onExited: IdleService.lockRequested()
++    }
++
++    Connections {
++        target: IdleService
++        function onPrepareDesktopRevealRequested() {
++            IdleService.manualLockHandoffHidden = false;
++            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/hypr-lock-window-opacity", "restore"]);
++        }
++        function onIsShellLockedChanged() {
++            if (IdleService.isShellLocked)
++                return;
++            IdleService.manualLockHandoffHidden = false;
++            root.manualLockHandoffStarted = false;
++            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/hypr-lock-window-opacity", "restore"]);
++        }
++    }
+ 
+     property bool osdSurfacesLoaded: false
+     property int pendingOsdResumeReloads: 0
+@@ -76,6 +99,14 @@
+                 screen: fadeWindowLoader.modelData
+ 
+                 onFadeCompleted: {
++                    if (fadeWindowLoader.loadedWindow.wallpaperMode) {
++                        if (root.manualLockHandoffStarted)
++                            return;
++                        root.manualLockHandoffStarted = true;
++                        IdleService.manualLockHandoffHidden = true;
++                        hideDesktopWindows.running = true;
++                        return;
++                    }
+                     IdleService.lockRequested();
+                 }
+ 
+@@ -94,6 +125,11 @@
+                     }
+                 }
+ 
++                function onManualFadeToLockRequested() {
++                    if (!fadeWindowLoader.loadedWindow || !fadeWindowLoader.loadedWindow.startFade(true))
++                        IdleService.lockRequested();
++                }
++
+                 function onCancelFadeToLock() {
+                     if (fadeWindowLoader.loadedWindow) {
+                         fadeWindowLoader.loadedWindow.cancelFade();
+@@ -101,9 +137,11 @@
+                 }
+ 
+                 function onDismissFadeToLock() {
+-                    if (fadeWindowLoader.loadedWindow) {
+-                        fadeWindowLoader.loadedWindow.dismiss();
+-                    }
++                    const window = fadeWindowLoader.loadedWindow;
++                    // The secure-lock signal can arrive before its first frame is
++                    // presented. Keep the wallpaper over the desktop until unlock.
++                    if (window && !(window.wallpaperMode && IdleService.isShellLocked))
++                        window.dismiss();
+                 }
+             }
+         }
+--- a/DankCommon/Widgets/DankTextField.qml
++++ b/DankCommon/Widgets/DankTextField.qml
+@@ -128,6 +128,8 @@
+ 
+     TextInput {
+         id: textInput
++        // Match the shell's text renderer so input glyphs remain visible.
++        renderType: Style.textRenderType === Style.TextRenderType.Native ? TextInput.NativeRendering : (Style.textRenderType === Style.TextRenderType.Curve ? TextInput.CurveRendering : TextInput.QtRendering)
+ 
+         anchors.left: leftIcon.visible ? leftIcon.right : parent.left
+         anchors.leftMargin: Style.spacingM
+--- a/Widgets/DankFocusGrab.qml
++++ b/Widgets/DankFocusGrab.qml
+@@ -8,6 +8,7 @@
+     id: root
+ 
+     property bool wanted: false
++    property int activationDelay: 0
+     property bool _held: false
+     property bool _compositorCleared: false
+     property var _restoreToplevel: null
+@@ -25,11 +26,20 @@
+         }
+     }
+ 
++    property Timer _activationTimer: Timer {
++        interval: root.activationDelay
++        onTriggered: {
++            if (root.wanted)
++                root.active = true;
++        }
++    }
++
+     onWantedChanged: _sync()
+     Component.onCompleted: _sync()
+ 
+     function _sync() {
+         if (!wanted) {
++            _activationTimer.stop();
+             if (_held)
+                 _releaseTimer.restart();
+             return;
+@@ -39,7 +49,10 @@
+         _compositorCleared = false;
+         _restoreToplevel = KeyboardFocus.captureActiveToplevel();
+         _restoreWorkspaceId = Hyprland.focusedWorkspace?.id ?? -1;
+-        active = true;
++        if (activationDelay > 0)
++            _activationTimer.restart();
++        else
++            active = true;
+     }
+ 
+     onCleared: _compositorCleared = true
+--- a/Widgets/DankPopout.qml
++++ b/Widgets/DankPopout.qml
+@@ -62,10 +62,28 @@
+ 
+     // Hyprland OnDemand grab: whitelist popout surfaces and bars so dismiss clicks still land.
+     DankFocusGrab {
++        id: popoutGrab
++        // Map the popup before creating the grab. Establish keyboard focus on
++        // content first, then whitelist dismiss surfaces in a second commit.
++        // This prevents grab initialization from stealing the bar's pointer focus.
++        activationDelay: 50
++        property bool dismissSurfacesReady: false
++        onActiveChanged: {
++            if (active) {
++                Qt.callLater(() => {
++                    if (popoutGrab.active)
++                        popoutGrab.dismissSurfacesReady = true;
++                });
++            } else {
++                dismissSurfacesReady = false;
++            }
++        }
+         windows: {
+             const list = [];
+             if (root.contentWindow)
+                 list.push(root.contentWindow);
++            if (!dismissSurfacesReady)
++                return list;
+             if (root.backgroundWindow && root.backgroundWindow !== root.contentWindow)
+                 list.push(root.backgroundWindow);
+             const transientWindows = root.transientSurfaceTracker?.focusWindows ?? [];
+@@ -383,3 +401,4 @@
+         }
+     }
+ }
++
