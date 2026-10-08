@@ -1,0 +1,5 @@
+// Managed by the DMS AI Agent plugin — change the hotkey in
+// DMS Settings → Plugins → DMS AI Agent instead of editing this file.
+binds {
+    Mod+A hotkey-overlay-title="AI Agent chat" { spawn "dms" "ipc" "call" "dmsAgent" "toggle"; }
+}

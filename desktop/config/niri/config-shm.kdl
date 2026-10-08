@@ -1,0 +1,6 @@
+include "config.kdl"
+
+debug {
+    // Discord's Linux client requires shared-memory PipeWire frames.
+    disable-pipewire-dmabuf
+}
