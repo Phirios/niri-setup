@@ -1,0 +1,902 @@
+--- /dev/null
++++ b/Modules/DankDash/LyricGlowChunk.qml
+@@ -0,0 +1,59 @@
++import QtQuick
++
++Item {
++    id: root
++    property string text: ""
++    property real progress: 0
++    property real glowStrength: 0.65
++    Behavior on glowStrength { NumberAnimation { duration: 260 } }
++    Behavior on sungColor { ColorAnimation { duration: 260 } }
++    property int fontSize: 26
++    property string fontFamily: "sans-serif"
++    property color sungColor: "white"
++    property color unsungColor: "#55ffffff"
++    readonly property real padding: 8
++    implicitWidth: metrics.advanceWidth
++    implicitHeight: glyph.implicitHeight
++    width: implicitWidth
++    height: implicitHeight
++
++    TextMetrics {
++        id: metrics
++        text: root.text
++        font: glyph.font
++    }
++    Text {
++        id: glyph
++        text: root.text
++        textFormat: Text.PlainText
++        width: root.width
++        font.pixelSize: root.fontSize
++        font.family: root.fontFamily
++        font.weight: Font.DemiBold
++        color: "white"
++        renderType: Text.QtRendering
++    }
++    ShaderEffectSource {
++        id: glyphSource
++        sourceItem: glyph
++        sourceRect: Qt.rect(-root.padding, -root.padding, root.width + root.padding * 2, root.height + root.padding * 2)
++        textureSize: Qt.size(Math.ceil(root.width + root.padding * 2), Math.ceil(root.height + root.padding * 2))
++        hideSource: true
++        live: true
++        visible: false
++    }
++    ShaderEffect {
++        x: -root.padding
++        y: -root.padding
++        width: root.width + root.padding * 2
++        height: root.height + root.padding * 2
++        property var source: glyphSource
++        property real progress: root.progress
++        property real glowStrength: root.glowStrength
++        property real paddingFraction: root.padding / width
++        property vector2d pixelStep: Qt.vector2d(1 / width, 1 / height)
++        property color sungColor: root.sungColor
++        property color unsungColor: root.unsungColor
++        fragmentShader: Qt.resolvedUrl("lyrics-wipe.frag.qsb")
++    }
++}
+--- /dev/null
++++ b/Modules/DankDash/MediaLyricsPanel.qml
+@@ -0,0 +1,407 @@
++import QtQuick
++import Quickshell.Io
++import qs.Common
++import qs.Services
++import qs.Widgets
++
++Item {
++    id: root
++    required property var player
++    property bool enabledLyrics: false
++    property var lines: []
++    property string status: "idle"
++    property string loadedKey: ""
++    property string requestKey: ""
++    property bool wordTimed: false
++    property bool refreshRequest: false
++    property bool autoFollow: true
++    property real position: player.activePlayer?.position ?? 0
++    property real clockAt: 0
++    property real clockPosition: 0
++    readonly property int lyricFontSize: Math.max(24, Theme.fontSizeMedium + 10)
++    function syncClock() {
++        clockPosition = player.activePlayer?.position ?? 0;
++        clockAt = Date.now();
++        position = clockPosition;
++    }
++    Connections {
++        target: root.player.activePlayer
++        ignoreUnknownSignals: true
++        function onPositionChanged() { root.syncClock(); }
++        function onPlaybackStateChanged() { root.syncClock(); }
++    }
++    FrameAnimation {
++        running: root.enabledLyrics && root.player.live && root.status === "synced" && root.player.activePlayer?.playbackState === 1
++        onTriggered: root.position = root.clockPosition + Math.min(0.25, Math.max(0, (Date.now() - root.clockAt) / 1000))
++    }
++    readonly property bool hasOppositeTurn: lines.some(line => line.opposite_turn)
++    readonly property string trackPath: player.activePlayer?.metadata?.["xesam:url"] || ""
++    readonly property string trackKey: JSON.stringify([MprisController.stableTitle, MprisController.stableArtist, MprisController.stableAlbum, Math.round(player.stableLength), trackPath, SettingsData.mediaLyricsMusixmatchEnabled])
++    readonly property int currentLine: {
++        if (status !== "synced") return -1;
++        let current = -1;
++        let latestStart = -1;
++        for (let i = 0; i < lines.length; i++) {
++            const line = lines[i];
++            if (!line.background && line.start_time <= position && lineActiveAt(line) && line.start_time >= latestStart) {
++                latestStart = line.start_time;
++                current = i;
++            }
++        }
++        return current;
++    }
++    clip: true
++
++    function escapeText(value) {
++        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
++    }
++    function lineEnd(line) {
++        if (line.end_time !== null && line.end_time !== undefined && line.end_time > line.start_time) return line.end_time;
++        let end = Infinity;
++        for (let i = 0; i < lines.length; i++) {
++            if (!lines[i].background && lines[i].start_time > line.start_time) end = Math.min(end, lines[i].start_time);
++        }
++        return end;
++    }
++    function nextMainStart(line) {
++        let next = Infinity;
++        for (let i = 0; i < lines.length; i++) {
++            if (!lines[i].background && lines[i].start_time > line.start_time)
++                next = Math.min(next, lines[i].start_time);
++        }
++        return next;
++    }
++    function lineActiveAt(line) {
++        if (position < line.start_time) return false;
++        const next = nextMainStart(line);
++        const hasEnd = line.end_time !== null && line.end_time !== undefined;
++        if (!hasEnd) return position < next;
++        if (position <= line.end_time) return true;
++        // Kopuz holds a foreground line through a breath of at most 3 seconds.
++        // Background vocals with explicit ends follow their own timing.
++        return !line.background && next > line.end_time && next - line.end_time <= 3.0 && position < next;
++    }
++    function lineActive(line, index) {
++        return status === "synced" && lineActiveAt(line) && (line.background || index === currentLine);
++    }
++    function backgroundVisible(line, index) {
++        return !line.background || lineActive(line, index) || (currentLine >= 0 && line.parent_line_index === currentLine);
++    }
++    function chunkEnd(line, index) {
++        const chunks = line.chunks || [];
++        const start = chunks[index].start_time;
++        const next = index + 1 < chunks.length ? chunks[index + 1].start_time : lineEnd(line);
++        return isFinite(next) && next > start ? next : start + 0.8;
++    }
++    function chunkProgress(line, index) {
++        if (status !== "synced") return 0;
++        const start = line.chunks[index].start_time;
++        const span = Math.min(1.2, chunkEnd(line, index) - start);
++        return Math.max(0, Math.min(1, (position - start) / Math.max(0.01, span)));
++    }
++    function chunkGroups(line) {
++        const chunks = line.chunks || [];
++        if (chunks.length < 2) return (String(line.text || "♪").match(/\S+\s*|\s+/g) || []).map(text => ({chunks: [{text: text, index: -1}]}));
++        const groups = [];
++        let group = [];
++        for (let i = 0; i < chunks.length; i++) {
++            // Keep syllables of the same word together when wrapping.
++            if (group.length && /^\s/.test(chunks[i].text)) {
++                groups.push({chunks: group});
++                group = [];
++            }
++            group.push({text: chunks[i].text, index: i});
++            if (/\s$/.test(chunks[i].text)) {
++                groups.push({chunks: group});
++                group = [];
++            }
++        }
++        if (group.length) groups.push({chunks: group});
++        return groups;
++    }
++    function seekTo(line) {
++        if (status !== "synced" || !player.activePlayer?.canSeek || line.start_time < 0) return;
++        player.activePlayer.position = Math.max(0.1, line.start_time);
++        syncClock();
++        autoFollow = true;
++        scrollAnimation.stop();
++        centerTimer.restart();
++    }
++    function resumeFollowing() {
++        if (!enabledLyrics || !player.live || !visible) return;
++        syncClock();
++        autoFollow = true;
++        scrollAnimation.stop();
++        centerTimer.restart();
++    }
++    function centerCurrent() {
++        if (!enabledLyrics || !player.live || !visible || list.height <= 0 || !autoFollow || list.dragging || list.flicking || scrollAnimation.running || currentLine < 0) return;
++        // Every row has a measured position; hidden child rows cannot shift a virtual list origin.
++        lyricColumn.forceLayout();
++        const row = lyricRepeater.itemAt(currentLine);
++        if (!row) return;
++        const wanted = Math.max(0, Math.min(Math.max(0, list.contentHeight - list.height), row.y - list.height * 0.42));
++        if (Math.abs(list.contentY - wanted) < 2) return;
++        scrollAnimation.stop();
++        scrollAnimation.from = list.contentY;
++        scrollAnimation.to = wanted;
++        scrollAnimation.start();
++    }
++    Timer { id: centerTimer; interval: 0; onTriggered: root.centerCurrent() }
++    NumberAnimation {
++        id: scrollAnimation
++        target: list
++        property: "contentY"
++        duration: 720
++        easing.type: Easing.OutCubic
++        onFinished: centerTimer.restart()
++    }
++    Timer {
++        interval: 180
++        repeat: true
++        running: root.enabledLyrics && root.player.live && root.status === "synced" && root.player.activePlayer?.playbackState === 1
++        onTriggered: root.player.activePlayer?.positionChanged()
++    }
++    function fetchLyrics() {
++        if (!enabledLyrics || !player.live || process.running || loadedKey === trackKey) return;
++        if (!MprisController.stableTitle || !MprisController.stableArtist) {
++            status = "no_info";
++            return;
++        }
++        requestKey = trackKey;
++        status = "loading";
++        process.command = ["/home/phirios/.local/bin/dms-kopuz-lyrics", MprisController.stableTitle, MprisController.stableArtist, MprisController.stableAlbum || "", String(player.stableLength || 0), trackPath, refreshRequest ? "--refresh" : "", SettingsData.mediaLyricsMusixmatchEnabled ? "--musixmatch" : ""];
++        refreshRequest = false;
++        process.running = true;
++    }
++    function retry() {
++        loadedKey = "";
++        refreshRequest = true;
++        fetchLyrics();
++    }
++    onTrackKeyChanged: {
++        autoFollow = true;
++        lines = [];
++        status = "idle";
++        loadedKey = "";
++        debounce.restart();
++    }
++    onEnabledLyricsChanged: if (enabledLyrics) { resumeFollowing(); debounce.restart(); }
++    onVisibleChanged: if (visible) resumeFollowing()
++    onStatusChanged: if (status === "synced") centerTimer.restart()
++    Component.onCompleted: { syncClock(); if (enabledLyrics) debounce.restart(); }
++    Connections {
++        target: root.player
++        function onLiveChanged() { if (root.player.live && root.enabledLyrics) { root.resumeFollowing(); debounce.restart(); } }
++    }
++    Timer {
++        id: debounce
++        interval: 300
++        onTriggered: root.fetchLyrics()
++    }
++    Process {
++        id: process
++        stdout: StdioCollector {
++            onStreamFinished: {
++                if (root.requestKey !== root.trackKey) {
++                    debounce.restart();
++                    return;
++                }
++                try {
++                    const result = JSON.parse(text);
++                    root.lines = result.lines || [];
++                    root.wordTimed = !!result.word_timed;
++                    root.status = result.status || "error";
++                } catch (_) {
++                    root.status = "error";
++                }
++                root.loadedKey = root.requestKey;
++                console.info("[HoverLyrics] Kopuz", root.status, root.lines.length, "lines", root.wordTimed ? "word timing" : "line timing", "Musixmatch:", !!result.musixmatch_enabled);
++            }
++        }
++        onExited: debounce.restart()
++    }
++    Column {
++        anchors.centerIn: parent
++        width: parent.width - 32
++        spacing: Theme.spacingS
++        visible: root.lines.length === 0
++        StyledText {
++            width: parent.width
++            horizontalAlignment: Text.AlignHCenter
++            wrapMode: Text.WordWrap
++            color: Theme.surfaceTextMedium
++            text: {
++                switch (root.status) {
++                case "loading": return I18n.tr("Loading lyrics…");
++                case "instrumental": return I18n.tr("Instrumental track");
++                case "no_info": return I18n.tr("Track title and artist are needed for lyrics");
++                case "not_found": return I18n.tr("No lyrics found for this track");
++                case "error": return I18n.tr("Could not load lyrics");
++                default: return I18n.tr("Lyrics");
++                }
++            }
++        }
++        StyledText {
++            width: parent.width
++            horizontalAlignment: Text.AlignHCenter
++            color: root.player.accent
++            text: I18n.tr("Retry")
++            visible: root.status === "error" || root.status === "not_found"
++            MouseArea {
++                anchors.fill: parent
++                cursorShape: Qt.PointingHandCursor
++                onClicked: root.retry()
++            }
++        }
++    }
++    Flickable {
++        id: list
++        anchors.fill: parent
++        anchors.leftMargin: 16
++        anchors.rightMargin: 16
++        anchors.bottomMargin: 25
++        clip: true
++        contentWidth: width
++        contentHeight: lyricColumn.height
++        flickableDirection: Flickable.VerticalFlick
++        boundsBehavior: Flickable.StopAtBounds
++        property int currentIndex: root.currentLine
++        onCurrentIndexChanged: { scrollAnimation.stop(); centerTimer.restart(); }
++        onContentHeightChanged: centerTimer.restart()
++        onHeightChanged: centerTimer.restart()
++        onDraggingChanged: {
++            if (dragging) { root.autoFollow = false; scrollAnimation.stop(); }
++        }
++        MouseArea {
++            anchors.fill: parent
++            acceptedButtons: Qt.NoButton
++            onWheel: wheel => {
++                root.autoFollow = false;
++                scrollAnimation.stop();
++                wheel.accepted = false;
++            }
++        }
++        layer.enabled: true
++        layer.effect: ShaderEffect {
++            property real fadeFraction: 0.16
++            fragmentShader: Qt.resolvedUrl("lyrics-fade.frag.qsb")
++        }
++        Column {
++            id: lyricColumn
++            width: list.width
++            topPadding: list.height * 0.42
++            bottomPadding: list.height * 0.58
++            Repeater {
++                id: lyricRepeater
++                model: root.lines
++                onCountChanged: centerTimer.restart()
++                delegate: Item {
++                    id: lyricRow
++                    required property var modelData
++                    required property int index
++                    readonly property bool shown: root.backgroundVisible(modelData, index)
++                    readonly property bool activeLine: root.lineActive(modelData, index)
++                    readonly property bool followedByChild: root.lines.some((line, childIndex) => childIndex > index && line.background && line.parent_line_index === index && root.backgroundVisible(line, childIndex))
++                    readonly property int size: modelData.background ? Math.max(19, root.lyricFontSize - 5) : root.lyricFontSize
++                    readonly property real focusScale: modelData.background ? 1.03 : 1.06
++                    readonly property real glowInset: 10
++                    width: list.width
++                    height: shown ? words.height * focusScale + (modelData.background ? 6 : followedByChild ? 6 : 22) : 0
++                    opacity: shown ? (modelData.background ? 0.75 : 1) : 0
++                    visible: height > 0
++                    Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
++                    Behavior on opacity { NumberAnimation { duration: 180 } }
++                    onHeightChanged: centerTimer.restart()
++                    onYChanged: centerTimer.restart()
++                    TextMetrics {
++                        id: wholeLine
++                        text: (lyricRow.modelData.chunks || []).length >= 2 ? lyricRow.modelData.chunks.map(chunk => chunk.text).join("") : lyricRow.modelData.text || "♪"
++                        font.pixelSize: lyricRow.size
++                        font.family: Theme.fontFamily
++                        font.weight: Font.DemiBold
++                    }
++                    Flow {
++                        id: words
++                        property int layoutRevision: 0
++                        onPositioningComplete: layoutRevision++
++                        function wrappedRowOffset(rowY) {
++                            // Translate the word content, leaving Flow's layout cells intact.
++                            // Each wrapped row gets its own alignment within the lyric block.
++                            const revision = layoutRevision;
++                            if (root.hasOppositeTurn && !lyricRow.modelData.opposite_turn)
++                                return 0;
++                            let rowEnd = 0;
++                            for (let i = 0; i < wordGroups.count; i++) {
++                                const cell = wordGroups.itemAt(i);
++                                if (cell && Math.abs(cell.y - rowY) < 0.5)
++                                    rowEnd = Math.max(rowEnd, cell.x + cell.width);
++                            }
++                            const remaining = Math.max(0, width - rowEnd);
++                            return root.hasOppositeTurn ? remaining : remaining / 2;
++                        }
++                        // Wrap for the largest focused size, keeping line breaks stable during the scale animation.
++                        width: Math.min(Math.max(1, (lyricRow.width - lyricRow.glowInset * 2) / lyricRow.focusScale), wholeLine.advanceWidth + 1)
++                        height: childrenRect.height
++                        y: 5
++                        x: lyricRow.modelData.opposite_turn ? lyricRow.width - lyricRow.glowInset - width : root.hasOppositeTurn ? lyricRow.glowInset : (lyricRow.width - width) / 2
++                        scale: lyricRow.activeLine ? lyricRow.focusScale : 1
++                        transformOrigin: lyricRow.modelData.opposite_turn ? Item.TopRight : root.hasOppositeTurn ? Item.TopLeft : Item.Top
++                        Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
++                        spacing: 0
++                        Repeater {
++                            id: wordGroups
++                            model: root.chunkGroups(lyricRow.modelData)
++                            delegate: Item {
++                                required property var modelData
++                                width: Math.min(wordRow.width, words.width)
++                                height: wordRow.height * wordRow.scale
++                                Row {
++                                    id: wordRow
++                                    x: words.wrappedRowOffset(parent.y)
++                                    spacing: 0
++                                    scale: Math.min(1, words.width / Math.max(1, implicitWidth))
++                                    transformOrigin: Item.TopLeft
++                                    Repeater {
++                                        model: modelData.chunks
++                                        delegate: LyricGlowChunk {
++                                            required property var modelData
++                                            text: modelData.text
++                                            fontSize: lyricRow.size
++                                            fontFamily: Theme.fontFamily
++                                            sungColor: Theme.withAlpha(Theme.surfaceText, lyricRow.activeLine ? 1 : 0.44)
++                                            glowStrength: lyricRow.activeLine ? 0.7 : 0
++                                            unsungColor: Theme.withAlpha(Theme.surfaceText, 0.3)
++                                            progress: modelData.index >= 0 ? root.chunkProgress(lyricRow.modelData, modelData.index)
++                                                : root.status === "synced" && root.position >= lyricRow.modelData.start_time ? 1 : 0
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                    }
++                    MouseArea {
++                        anchors.fill: parent
++                        enabled: root.status === "synced" && !!root.player.activePlayer?.canSeek && lyricRow.shown
++                        cursorShape: Qt.PointingHandCursor
++                        onClicked: root.seekTo(lyricRow.modelData)
++                    }
++                }
++            }
++        }
++    }
++    StyledText {
++        anchors.bottom: parent.bottom
++        anchors.bottomMargin: 7
++        anchors.horizontalCenter: parent.horizontalCenter
++        text: !root.autoFollow ? I18n.tr("Follow lyrics") : "Kopuz · " + (root.status === "plain" ? I18n.tr("Unsynced lyrics") : root.wordTimed ? I18n.tr("Word synced") : I18n.tr("Line synced"))
++        font.pixelSize: Theme.fontSizeSmall
++        color: root.autoFollow ? Theme.surfaceTextSecondary : root.player.accent
++        MouseArea {
++            anchors.fill: parent
++            enabled: !root.autoFollow
++            cursorShape: Qt.PointingHandCursor
++            onClicked: { root.autoFollow = true; centerTimer.restart(); }
++        }
++    }
++}
+--- a/Modules/DankDash/MediaPlayerDashChrome.qml
++++ b/Modules/DankDash/MediaPlayerDashChrome.qml
+@@ -10,6 +10,7 @@
+     id: root
+ 
+     required property var player
++    property bool showLyrics: true
+ 
+     property alias volumeButton: volumeButton
+     property alias playerSelectorButton: playerSelectorButton
+@@ -54,10 +55,18 @@
+                     width: Math.min(parent.width * 0.8, parent.height * 0.9)
+                     height: width
+                     anchors.centerIn: parent
++                    visible: !root.showLyrics
+                     activePlayer: player.activePlayer
+                     artUrl: TrackArtService.resolvedArtUrl
+                     accentColor: MediaAccentService.accent
+                     showAnimation: SettingsData.audioVisualizerEnabled
++                }
++                MediaLyricsPanel {
++                    anchors.fill: parent
++                    anchors.margins: 8
++                    player: root.player
++                    enabledLyrics: root.showLyrics
++                    visible: root.showLyrics
+                 }
+             }
+ 
+@@ -361,6 +370,36 @@
+     }
+ 
+     Rectangle {
++        width: 40
++        height: 40
++        radius: 20
++        x: player.isRightEdge ? Theme.spacingM : parent.width - 40 - Theme.spacingM
++        y: 75
++        z: 100
++        visible: !player.showNoPlayerNow
++        color: root.showLyrics || lyricsArea.containsMouse ? player.accentPressed : "transparent"
++        border.color: root.showLyrics ? player.accent : Theme.outlineStrong
++        border.width: 1
++        DankIcon {
++            anchors.centerIn: parent
++            name: "lyrics"
++            size: 18
++            color: root.showLyrics ? player.accent : Theme.surfaceText
++        }
++        MouseArea {
++            id: lyricsArea
++            anchors.fill: parent
++            hoverEnabled: true
++            cursorShape: Qt.PointingHandCursor
++            onClicked: {
++                player.hideDropdowns();
++                player.resetDropdownStates();
++                root.showLyrics = !root.showLyrics;
++            }
++        }
++    }
++
++    Rectangle {
+         id: playerSelectorButton
+         width: 40
+         height: 40
+--- a/Modules/DankDash/MediaPlayerIslandChrome.qml
++++ b/Modules/DankDash/MediaPlayerIslandChrome.qml
+@@ -18,7 +18,7 @@
+     property alias playerSelectorButton: sourceButton
+     property alias audioDevicesButton: outputButton
+ 
+-    property string panel: ""
++    property string panel: "lyrics"
+ 
+     readonly property var activePlayer: root.player.activePlayer
+     readonly property bool playing: root.activePlayer?.playbackState === MprisPlaybackState.Playing
+@@ -50,6 +50,8 @@
+     readonly property int maxRows: 4
+     readonly property real panelHeight: {
+         switch (root.panel) {
++        case "lyrics":
++            return 280;
+         case "volume":
+             return 64;
+         case "devices":
+@@ -76,7 +78,7 @@
+ 
+     onLiveChanged: {
+         if (root.live)
+-            root.panel = "";
++            root.panel = "lyrics";
+     }
+ 
+     Loader {
+@@ -145,6 +147,11 @@
+                     id: buttonRow
+ 
+                     spacing: Theme.spacingXXS
++
++                    GroupButton {
++                        panelId: "lyrics"
++                        iconName: "lyrics"
++                    }
+ 
+                     GroupButton {
+                         id: volumeButton
+@@ -361,7 +368,7 @@
+             }
+             height: root.panelHeight
+             radius: 20
+-            color: Theme.withAlpha(Theme.surfaceText, 0.08)
++            color: root.panel === "lyrics" ? "transparent" : Theme.withAlpha(Theme.surfaceText, 0.08)
+             visible: root.panel !== ""
+ 
+             Loader {
+@@ -371,6 +378,8 @@
+                 }
+                 sourceComponent: {
+                     switch (root.panel) {
++                    case "lyrics":
++                        return lyricsPanel;
+                     case "volume":
+                         return volumePanel;
+                     case "devices":
+@@ -381,6 +390,14 @@
+                     return null;
+                 }
+             }
++        }
++    }
++
++    Component {
++        id: lyricsPanel
++        MediaLyricsPanel {
++            player: root.player
++            enabledLyrics: root.panel === "lyrics"
+         }
+     }
+ 
+--- /dev/null
++++ b/Modules/DankDash/lyrics-fade.frag
+@@ -0,0 +1,14 @@
++#version 440
++layout(location = 0) in vec2 qt_TexCoord0;
++layout(location = 0) out vec4 fragColor;
++layout(std140, binding = 0) uniform buf {
++    mat4 qt_Matrix;
++    float qt_Opacity;
++    float fadeFraction;
++};
++layout(binding = 1) uniform sampler2D source;
++void main() {
++    float fade = smoothstep(0.0, fadeFraction, qt_TexCoord0.y)
++               * smoothstep(0.0, fadeFraction, 1.0 - qt_TexCoord0.y);
++    fragColor = texture(source, qt_TexCoord0) * fade * qt_Opacity;
++}
+--- /dev/null
++++ b/Modules/DankDash/lyrics-wipe.frag
+@@ -0,0 +1,32 @@
++#version 440
++layout(location = 0) in vec2 qt_TexCoord0;
++layout(location = 0) out vec4 fragColor;
++layout(std140, binding = 0) uniform buf {
++    mat4 qt_Matrix;
++    float qt_Opacity;
++    float progress;
++    float paddingFraction;
++    float glowStrength;
++    vec2 pixelStep;
++    vec4 sungColor;
++    vec4 unsungColor;
++};
++layout(binding = 1) uniform sampler2D source;
++void main() {
++    vec2 uv = qt_TexCoord0;
++    float x = (uv.x - paddingFraction) / max(0.001, 1.0 - 2.0 * paddingFraction);
++    float fill = progress <= 0.0 ? 0.0 : progress >= 1.0 ? 1.0
++                 : 1.0 - smoothstep(progress - 0.05, progress + 0.05, x);
++    float glyph = texture(source, uv).a;
++    float halo = 0.0;
++    for (int i = 0; i < 8; i++) {
++        float angle = float(i) * 0.78539816;
++        vec2 dir = vec2(cos(angle), sin(angle));
++        halo += texture(source, uv + dir * pixelStep * 2.0).a * 0.065;
++        halo += texture(source, uv + dir * pixelStep * 5.0).a * 0.045;
++    }
++    vec4 tint = mix(unsungColor, sungColor, fill);
++    float alpha = glyph * tint.a;
++    float glow = halo * fill * glowStrength * (1.0 - alpha);
++    fragColor = vec4(tint.rgb * glyph + sungColor.rgb * glow, alpha + glow) * qt_Opacity;
++}
+--- /dev/null
++++ b/Modules/DankDash/lyrics.py
+@@ -0,0 +1,70 @@
++#!/usr/bin/env python3
++"""Fetch LRCLIB lyrics for the DMS hover player; stdout is one JSON object."""
++import json
++import math
++import re
++import sys
++import urllib.error
++import urllib.parse
++import urllib.request
++
++
++def parse_lrc(text):
++    lines = []
++    for raw in text.splitlines():
++        tags = re.findall(r'\[(\d+):(\d+(?:\.\d+)?)\]', raw)
++        lyric = re.sub(r'\[[^\]]*\]', '', raw).strip()
++        for minutes, seconds in tags:
++            timestamp = int(minutes) * 60 + float(seconds)
++            if math.isfinite(timestamp):
++                lines.append({'time': timestamp, 'text': lyric})
++    return sorted(lines, key=lambda line: line['time'])
++
++
++def normalize(text):
++    return ' '.join(re.findall(r'\w+', text.casefold()))
++
++
++def fetch(title, artist, album, duration):
++    params = {'track_name': title, 'artist_name': artist}
++    if album:
++        params['album_name'] = album
++    if duration > 0:
++        params['duration'] = round(duration)
++    failed = False
++    for endpoint in ('get', 'search'):
++        query = params if endpoint == 'get' else {'track_name': title, 'artist_name': artist}
++        url = 'https://lrclib.net/api/' + endpoint + '?' + urllib.parse.urlencode(query)
++        try:
++            request = urllib.request.Request(url, headers={'User-Agent': 'DMS-HoverLyrics/1.0'})
++            with urllib.request.urlopen(request, timeout=8) as response:
++                data = json.load(response)
++            candidates = data if isinstance(data, list) else [data]
++            candidates = [item for item in candidates
++                          if normalize(item.get('trackName', '')) == normalize(title)
++                          and normalize(item.get('artistName', '')) == normalize(artist)
++                          and (duration <= 0 or abs(item.get('duration', 0) - duration) <= 4)]
++            candidates.sort(key=lambda item: (not bool(item.get('syncedLyrics')), abs(item.get('duration', 0) - duration)))
++            for item in candidates:
++                if item.get('instrumental'):
++                    return {'status': 'instrumental', 'lines': []}
++                lines = parse_lrc(item.get('syncedLyrics') or '')
++                if lines:
++                    return {'status': 'synced', 'lines': lines}
++                plain = item.get('plainLyrics')
++                if plain:
++                    return {'status': 'plain', 'lines': [{'time': -1, 'text': line} for line in plain.splitlines()]}
++        except urllib.error.HTTPError as error:
++            failed = failed or error.code != 404
++        except (OSError, ValueError, TypeError):
++            failed = True
++    return {'status': 'error' if failed else 'not_found', 'lines': []}
++
++
++if __name__ == '__main__':
++    try:
++        title, artist, album, duration = sys.argv[1:5]
++        result = fetch(title, artist, album, float(duration)) if title and artist else {'status': 'no_info', 'lines': []}
++    except (ValueError, TypeError):
++        result = {'status': 'error', 'lines': []}
++    print(json.dumps(result, ensure_ascii=False))
+--- a/Modules/Settings/MediaPlayerTab.qml
++++ b/Modules/Settings/MediaPlayerTab.qml
+@@ -80,6 +80,15 @@
+                     description: I18n.tr("Blur the album art behind the media player")
+                     checked: SettingsData.mediaWallpaperEnabled
+                     onToggled: checked => SettingsData.set("mediaWallpaperEnabled", checked)
++                }
++
++                SettingsToggleRow {
++                    settingKey: "mediaCenterAmbientEnabled"
++                    tags: ["music", "media", "ambient", "album", "art", "center", "bar", "island", "background"]
++                    text: I18n.tr("Center bar ambient background")
++                    description: I18n.tr("Tint the center island background and visualizer with the current album artwork color")
++                    checked: SettingsData.mediaCenterAmbientEnabled
++                    onToggled: checked => SettingsData.set("mediaCenterAmbientEnabled", checked)
+                 }
+ 
+                 SettingsToggleRow {
+@@ -170,6 +179,23 @@
+                     description: I18n.tr("Allow adjusting device volume by scrolling on the right half of items in the device list")
+                     checked: SettingsData.audioDeviceScrollVolumeEnabled
+                     onToggled: checked => SettingsData.set("audioDeviceScrollVolumeEnabled", checked)
++                }
++            }
++
++            SettingsCard {
++                width: parent.width
++                iconName: "lyrics"
++                title: I18n.tr("Lyrics")
++                settingKey: "mediaLyrics"
++                tags: ["lyrics", "music", "musixmatch", "synced", "words"]
++
++                SettingsToggleRow {
++                    settingKey: "mediaLyricsMusixmatchEnabled"
++                    tags: ["lyrics", "musixmatch", "words", "timing"]
++                    text: I18n.tr("Musixmatch lyrics")
++                    description: I18n.tr("Try Musixmatch for word-synced lyrics in the top-bar player. Sends the playing track title and artist to Musixmatch.")
++                    checked: SettingsData.mediaLyricsMusixmatchEnabled
++                    onToggled: checked => SettingsData.set("mediaLyricsMusixmatchEnabled", checked)
+                 }
+             }
+ 
+--- a/Services/CavaService.qml
++++ b/Services/CavaService.qml
+@@ -35,10 +35,10 @@
+         running: root.cavaAvailable && root.refCount > 0
+         command: ["sh", "-c", `cat <<'CAVACONF' > ${root._confPath}
+ [general]
+-framerate=25
++framerate=60
+ bars=6
+-autosens=0
+-sensitivity=30
++autosens=1
++sensitivity=100
+ sleep_timer=3
+ lower_cutoff_freq=50
+ higher_cutoff_freq=12000
+@@ -47,6 +47,7 @@
+ method=raw
+ raw_target=/dev/stdout
+ data_format=ascii
++ascii_max_range=100
+ channels=mono
+ mono_option=average
+ 
+--- a/Services/MediaAccentService.qml
++++ b/Services/MediaAccentService.qml
+@@ -10,6 +10,8 @@
+ // falling back to Theme.primary when no usable accent is available.
+ Singleton {
+     id: root
++
++    readonly property color artworkAccent: _accent !== null ? _accent : Theme.primary
+ 
+     readonly property bool hasAccent: SettingsData.mediaUseAlbumArtAccent ? _accent !== null : true
+     readonly property color accent: SettingsData.mediaUseAlbumArtAccent && _accent !== null ? _accent : Theme.primary
+--- a/Widgets/ScrollingText.qml
++++ b/Widgets/ScrollingText.qml
+@@ -11,6 +11,7 @@
+     property alias font: label.font
+     property alias color: label.color
+     property bool active: true
++    property bool smoothScroll: false
+     property real holdStartMs: 2000
+     property real holdEndMs: 2000
+     property real pxPerMs: 1 / 60
+@@ -32,6 +33,8 @@
+         scrollOffset = 0;
+         scrollDirection = 1;
+         scrollHoldMs = holdStartMs;
++        if (smoothScroll && scrollActive)
++            smoothScrollAnimation.restart();
+     }
+ 
+     function stepScroll(deltaMs) {
+@@ -68,9 +71,12 @@
+ 
+         anchors.verticalCenter: parent.verticalCenter
+         wrapMode: Text.NoWrap
+-        width: Math.min(implicitWidth, root.width)
++        // Capture the full title before moving its texture through the viewport.
++        width: root.smoothScroll && root.needsScrolling ? implicitWidth : Math.min(implicitWidth, root.width)
++        layer.enabled: root.smoothScroll
++        layer.smooth: true
+         elide: SettingsData.scrollTitleEnabled ? Text.ElideNone : Text.ElideRight
+-        x: Math.round((root.needsScrolling ? -Math.min(root.scrollOffset, root.maxScrollOffset) : 0) + root.textShift)
++        x: (root.needsScrolling ? -Math.min(root.scrollOffset, root.maxScrollOffset) : 0) + root.textShift
+         opacity: 1
+ 
+         onTextChanged: {
+@@ -82,12 +88,12 @@
+         }
+     }
+ 
+-    // Timer stepping, not NumberAnimation: a running animation commits frames every vsync (#2863).
++    // Use sparse timer steps unless the caller opts into smooth animation.
+     // When cava frames are already driving renders, scroll steps ride those ticks instead (#2863).
+     Timer {
+         interval: 60
+         repeat: true
+-        running: root.scrollActive
++        running: root.scrollActive && !root.smoothScroll
+         onTriggered: {
+             if (cavaTickWatch.running)
+                 return;
+@@ -102,10 +108,36 @@
+ 
+     Connections {
+         target: CavaService
+-        enabled: root.scrollActive && SettingsData.audioVisualizerEnabled && CavaService.cavaAvailable
++        enabled: root.scrollActive && !root.smoothScroll && SettingsData.audioVisualizerEnabled && CavaService.cavaAvailable
+         function onValuesChanged() {
+             cavaTickWatch.restart();
+-            root.stepScroll(40);
++            root.stepScroll(1000 / 60);
++        }
++    }
++
++    onMaxScrollOffsetChanged: resetScroll()
++
++    SequentialAnimation {
++        id: smoothScrollAnimation
++        running: root.scrollActive && root.smoothScroll
++        loops: Animation.Infinite
++        PauseAnimation { duration: root.holdStartMs }
++        NumberAnimation {
++            target: root
++            property: "scrollOffset"
++            from: 0
++            to: root.maxScrollOffset
++            duration: Math.max(1, root.maxScrollOffset / Math.max(root.pxPerMs, 0.0001))
++            easing.type: Easing.Linear
++        }
++        PauseAnimation { duration: root.holdEndMs }
++        NumberAnimation {
++            target: root
++            property: "scrollOffset"
++            from: root.maxScrollOffset
++            to: 0
++            duration: Math.max(1, root.maxScrollOffset / Math.max(root.pxPerMs, 0.0001))
++            easing.type: Easing.Linear
+         }
+     }
+ 
