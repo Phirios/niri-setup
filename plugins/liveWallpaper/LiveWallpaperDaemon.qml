@@ -25,6 +25,67 @@ PluginComponent {
     readonly property bool gaming: Wallpaper.isGaming(NiriService.windows)
     property int failures: 0
     property bool ready: false
+    property var screenPlayers: ({})
+    property var lockFrameResults: ({})
+    property var lockFrameRequests: ({})
+    property var lockFramePaths: ({})
+    property var lockFrameCapturedAt: ({})
+
+    function captureLockFrame(screenName) {
+        const player = screenPlayers[screenName] || Object.values(screenPlayers)[0];
+        if (!player || !player.playingPath)
+            return "";
+        const name = player.modelData.name;
+        const token = String(Date.now());
+        const requests = Object.assign({}, lockFrameRequests);
+        requests[name] = token;
+        lockFrameRequests = requests;
+        const results = Object.assign({}, lockFrameResults);
+        delete results[name];
+        lockFrameResults = results;
+        const nextSlot = 1 - player.activeSlot;
+        const useNext = player.transitionTarget && player.effectFor(nextSlot).opacity > player.effectFor(player.activeSlot).opacity;
+        const path = useNext ? player.transitionTarget : player.playingPath;
+        const effect = player.effectFor(useNext ? nextSlot : player.activeSlot);
+        if (!effect.grabToImage(result => {
+            if (root.lockFrameRequests[name] !== token)
+                return;
+            const frames = Object.assign({}, root.lockFrameResults);
+            frames[name] = result;
+            root.lockFrameResults = frames;
+            const paths = Object.assign({}, root.lockFramePaths);
+            paths[name] = path;
+            root.lockFramePaths = paths;
+            const times = Object.assign({}, root.lockFrameCapturedAt);
+            times[name] = Date.now();
+            root.lockFrameCapturedAt = times;
+        }))
+            return "";
+        return token;
+    }
+
+    function lockFrameUrlForScreen(screenName, path) {
+        if (lockFramePaths[screenName] !== path || Date.now() - (lockFrameCapturedAt[screenName] || 0) > 2000)
+            return "";
+        const result = lockFrameResults[screenName];
+        return result ? result.url : "";
+    }
+
+    function playbackForScreen(screenName) {
+        const player = screenPlayers[screenName] || Object.values(screenPlayers)[0];
+        if (!player || !player.playingPath)
+            return null;
+        const nextSlot = 1 - player.activeSlot;
+        const useNext = player.transitionTarget && player.effectFor(nextSlot).opacity > player.effectFor(player.activeSlot).opacity;
+        const slot = useNext ? nextSlot : player.activeSlot;
+        const media = player.mediaFor(slot);
+        return {
+            path: useNext ? player.transitionTarget : player.playingPath,
+            position: media.position,
+            duration: media.duration,
+            playing: media.playbackState === MediaPlayer.PlayingState
+        };
+    }
 
     readonly property var decision: Wallpaper.decide({
         videoPath: videoPath,
@@ -43,11 +104,48 @@ PluginComponent {
         return trimmed.indexOf("~/") === 0 ? home + trimmed.slice(1) : trimmed;
     }
 
-    onVideoPathChanged: failures = 0
+    onVideoPathChanged: {
+        failures = 0;
+        paletteSync.restart();
+    }
     onDecisionChanged: console.info("LiveWallpaper:", decision.reason)
+
+    Component.onCompleted: paletteSync.restart()
+
+    Timer {
+        id: paletteSync
+        interval: 300
+        repeat: false
+        onTriggered: {
+            if (!root.videoPath)
+                return;
+            paletteProcess.command = [root.home + "/.local/bin/dms-live-wallpaper-palette", root.videoPath];
+            paletteProcess.running = true;
+        }
+    }
+
+    Process {
+        id: paletteProcess
+    }
 
     IpcHandler {
         target: "liveWallpaper"
+
+        function captureLockFrame(screenName: string): string {
+            return root.captureLockFrame(screenName);
+        }
+
+        function captureStatus(screenName: string): string {
+            const player = root.screenPlayers[screenName] || Object.values(root.screenPlayers)[0];
+            if (!player)
+                return "UNAVAILABLE";
+            const name = player.modelData.name;
+            return root.lockFrameResults[name] ? "READY" : "PENDING";
+        }
+
+        function status(screenName: string): string {
+            return JSON.stringify(root.playbackForScreen(screenName));
+        }
 
         function select(path: string): string {
             if (!path || !/\.(mp4|webm|mkv|mov)$/i.test(path))
@@ -73,6 +171,19 @@ PluginComponent {
         Item {
             id: player
             required property var modelData
+
+            Component.onCompleted: {
+                const players = Object.assign({}, root.screenPlayers);
+                players[modelData.name] = player;
+                root.screenPlayers = players;
+            }
+            Component.onDestruction: {
+                const players = Object.assign({}, root.screenPlayers);
+                if (players[modelData.name] === player) {
+                    delete players[modelData.name];
+                    root.screenPlayers = players;
+                }
+            }
 
             readonly property bool paused: root.pauseWhenHidden
                 && Wallpaper.isCovered(NiriService.allWorkspaces, modelData.name, NiriService.inOverview)
@@ -240,14 +351,14 @@ PluginComponent {
             PanelWindow {
                 id: wallpaperWindow
                 screen: player.modelData
-                WlrLayershell.layer: WlrLayer.Background
+                WlrLayershell.layer: WlrLayer.Bottom
                 WlrLayershell.namespace: "dms:live-wallpaper"
                 WlrLayershell.exclusionMode: ExclusionMode.Ignore
                 anchors.top: true
                 anchors.bottom: true
                 anchors.left: true
                 anchors.right: true
-                color: "black"
+                color: "transparent"
                 visible: false
 
                 mask: Region { item: Item {} }
