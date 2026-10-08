@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {test} = require('node:test');
 
-const NAMES = ['activeCasts', 'describeTarget', 'formatElapsed', 'planStart', 'planEnd', 'privacySwitchText', 'isPrivacyOn'];
+const NAMES = ['activeCasts', 'describeTarget', 'formatElapsed', 'planStart', 'planEnd'];
 const source = fs
     .readFileSync(path.join(__dirname, '../plugins/liveMode/live.js'), 'utf8')
     .replace(/^\.pragma library$/m, '');
@@ -76,21 +76,3 @@ test('planning does not modify its inputs', () => {
     assert.deepEqual(owned, {dnd: false, inhibit: false});
 });
 
-test('the privacy switch file includes the rules when on, and nothing when off', () => {
-    assert.match(Live.privacySwitchText(true), /^include optional=true "privacy-rules\.kdl"$/m);
-    assert.doesNotMatch(Live.privacySwitchText(false), /^include/m);
-});
-
-test('reads the privacy switch back from the file', () => {
-    assert.equal(Live.isPrivacyOn(Live.privacySwitchText(true)), true);
-    assert.equal(Live.isPrivacyOn(Live.privacySwitchText(false)), false);
-});
-
-test('a commented-out include does not count as on', () => {
-    assert.equal(Live.isPrivacyOn('// include optional=true "privacy-rules.kdl"\n'), false);
-});
-
-test('a missing or empty switch file counts as off', () => {
-    assert.equal(Live.isPrivacyOn(''), false);
-    assert.equal(Live.isPrivacyOn(undefined), false);
-});

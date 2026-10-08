@@ -2,7 +2,6 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Common
 import qs.Services
 import "live.js" as Live
@@ -33,36 +32,6 @@ Singleton {
     readonly property bool ownsDnd: session.dnd
     readonly property bool ownsInhibit: session.inhibit
 
-    readonly property string privacySwitchPath: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config")
-        + "/niri/custom/privacy.kdl"
-    readonly property bool privacyOn: Live.isPrivacyOn(privacySwitch.loaded ? privacySwitch.text() : "")
-
-    function setSilenced(on) {
-        SessionData.setDoNotDisturb(on, 0);
-    }
-
-    function setAwake(on) {
-        if (on) {
-            SessionService.setInhibitReason("Screen share");
-            SessionService.enableIdleInhibit();
-        } else {
-            SessionService.disableIdleInhibit();
-        }
-    }
-
-    function setPrivacy(on) {
-        privacySwitch.setText(Live.privacySwitchText(on));
-    }
-
-    FileView {
-        id: privacySwitch
-
-        path: root.privacySwitchPath
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-    }
-
     function nowSecs() {
         return Math.floor(Date.now() / 1000);
     }
@@ -80,7 +49,6 @@ Singleton {
         pluginId = id;
         session = Object.assign({}, noSession, service.loadPluginState(id, stateKey, noSession));
         sync();
-        startupGrace.start();
     }
 
     function remember(next) {
@@ -117,20 +85,11 @@ Singleton {
             return;
         if (live)
             begin();
-        // Right after a shell restart niri has not reported its casts yet, so "no cast" may
-        // only mean "not known yet". Ending then would restart the timer and flicker the settings.
-        else if (session.startedAt > 0 && !startupGrace.running)
+        else if (session.startedAt > 0)
             end();
     }
 
     onLiveChanged: sync()
-
-    Timer {
-        id: startupGrace
-
-        interval: 5000
-        onTriggered: root.sync()
-    }
 
     Timer {
         interval: 1000
