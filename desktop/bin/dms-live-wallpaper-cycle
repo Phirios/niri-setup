@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+direction="${1:-next}"
+case "$direction" in
+    next|previous) ;;
+    *) printf 'usage: %s [next|previous]\n' "$0" >&2; exit 2 ;;
+esac
+
+wallpaper_dir="$HOME/Videos/Wallpapers"
+settings_file="$HOME/.config/DankMaterialShell/plugin_settings.json"
+
+mapfile -d '' -t wallpapers < <(
+    find "$wallpaper_dir" -maxdepth 1 -type f \
+        \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' \) \
+        -print0 | sort -z
+)
+
+if ((${#wallpapers[@]} == 0)); then
+    printf 'No video wallpapers found in %s\n' "$wallpaper_dir" >&2
+    exit 1
+fi
+
+current="$(jq -r '.liveWallpaper.videoPath // ""' "$settings_file")"
+if [[ "$current" == '~/'* ]]; then
+    current="$HOME/${current#\~/}"
+fi
+
+current_index=-1
+for index in "${!wallpapers[@]}"; do
+    if [[ "${wallpapers[$index]}" == "$current" ]]; then
+        current_index=$index
+        break
+    fi
+done
+
+if [[ "$direction" == next ]]; then
+    selected_index=$(((current_index + 1) % ${#wallpapers[@]}))
+else
+    if ((current_index < 0)); then
+        selected_index=$((${#wallpapers[@]} - 1))
+    else
+        selected_index=$(((current_index - 1 + ${#wallpapers[@]}) % ${#wallpapers[@]}))
+    fi
+fi
+
+selected="${wallpapers[$selected_index]}"
+stored_path="~/Videos/Wallpapers/${selected##*/}"
+temporary="$(mktemp --tmpdir="$(dirname "$settings_file")" .plugin_settings.json.XXXXXX)"
+trap 'rm -f "$temporary"' EXIT
+jq --arg path "$stored_path" '.liveWallpaper.videoPath = $path' "$settings_file" > "$temporary"
+chmod --reference="$settings_file" "$temporary"
+mv "$temporary" "$settings_file"
+trap - EXIT
+
+payload="$(jq -cn --arg path "$selected" '{command:["loadfile",$path,"replace"]}')"
+shopt -s nullglob
+for socket in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/live-wallpaper-*.sock; do
+    printf '%s\n' "$payload" | socat -T 1 - "UNIX-CONNECT:$socket" >/dev/null 2>&1 || true
+done
+
+printf '%s\n' "$selected"

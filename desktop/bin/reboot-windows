@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! efibootmgr | grep -Eq '^Boot0000\*?[[:space:]]+Windows Boot Manager([[:space:]]|$)'; then
+    printf '%s\n' 'Windows Boot Manager is not UEFI entry 0000; no reboot scheduled.' >&2
+    exit 1
+fi
+
+sudo -v
+sudo efibootmgr -n 0000
+
+if ! efibootmgr | grep -Eq '^BootNext:[[:space:]]*0000$'; then
+    printf '%s\n' 'Could not verify the one-time Windows boot selection; no reboot scheduled.' >&2
+    exit 1
+fi
+
+printf '%s\n' 'Rebooting to Windows. Fedora remains the normal boot default.'
+sudo systemctl reboot

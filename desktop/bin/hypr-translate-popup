@@ -1,0 +1,35 @@
+#!/usr/bin/python3
+"""Toggle Dialect, translating selected or copied text when opening."""
+import json
+import subprocess
+import sys
+
+
+def clipboard(primary=False):
+    command = ["wl-paste", "--no-newline", "--type", "text"]
+    if primary:
+        command.append("--primary")
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=2)
+        if result.returncode == 0:
+            return result.stdout.decode("utf-8", errors="replace").strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+# Use Dialect's graceful quit action rather than affecting another window.
+clients = json.loads(subprocess.check_output(["hyprctl", "-j", "clients"]))
+if any(client.get("class") == "app.drey.Dialect" for client in clients):
+    raise SystemExit(subprocess.call([
+        "gapplication", "action", "app.drey.Dialect", "quit"
+    ]))
+
+command = ["flatpak", "run", "app.drey.Dialect"]
+if len(sys.argv) > 1 and sys.argv[1] == "--test":
+    text = "Hello, how are you?"
+else:
+    text = clipboard(primary=True) or clipboard()
+if text:
+    command.extend(["--text", text[:20000], "--dest", "tr"])
+raise SystemExit(subprocess.call(command))

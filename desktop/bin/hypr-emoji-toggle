@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if pgrep -u "$UID" -x plasma-emojier >/dev/null; then
+    pkill -u "$UID" -x plasma-emojier
+else
+    # Use the same KDE palette and icons as other desktop Qt apps.
+    exec env QT_QPA_PLATFORMTHEME=kde plasma-emojier
+fi

@@ -1,0 +1,21 @@
+#!/usr/bin/python3
+"""Measure the wallpaper's top strip, independently for each bar section."""
+import json
+import sys
+from PIL import Image, ImageOps
+try:
+    with Image.open(sys.argv[1]) as source:
+        image = ImageOps.exif_transpose(source).convert('RGB')
+        width, height = image.size
+        strip = image.crop((0, 0, width, max(1, round(height * .045))))
+        result = {}
+        for section, lo, hi in [('left', 0, .35), ('center', .35, .65), ('right', .65, 1)]:
+            pixels = strip.crop((int(width * lo), 0, max(int(width * lo) + 1, int(width * hi)), strip.height)).resize((96, 8))
+            def linear(channel):
+                value = channel / 255
+                return value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4
+            luminance = sum(.2126 * linear(r) + .7152 * linear(g) + .0722 * linear(b) for r, g, b in (pixels.get_flattened_data() if hasattr(pixels, "get_flattened_data") else pixels.getdata())) / (96 * 8)
+            result[section] = luminance > .179
+        print(json.dumps(result))
+except (OSError, IndexError):
+    print('{}')

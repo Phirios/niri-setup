@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Keep Hyprland windows hidden during the fade-to-session-lock handoff."""
+
+import concurrent.futures
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROPS = ("opacity", "opacity_inactive", "opacity_fullscreen")
+STATE = Path(os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000")) / "hypr-lock-window-opacity.json"
+
+
+def hyprctl(*args):
+    return subprocess.run(("hyprctl", *args), check=True, capture_output=True, text=True).stdout.strip()
+
+
+def get_property(address, prop):
+    return hyprctl("getprop", "address:" + address, prop)
+
+
+def apply(state, hide):
+    actions = []
+    for address, properties in state.items():
+        if not re.fullmatch(r"0x[0-9a-fA-F]+", address):
+            continue
+        for prop in PROPS:
+            value = "0" if hide else properties[prop]
+            if not re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)", value):
+                continue
+            actions.append(
+                "pcall(function() hl.dispatch(hl.dsp.window.set_prop({"
+                f"window='address:{address}', prop='{prop}', value='{value}'"
+                "})) end)"
+            )
+    if actions:
+        hyprctl("eval", "; ".join(actions))
+
+
+def hide():
+    if STATE.exists():
+        restore()
+    workspaces = {monitor["activeWorkspace"]["id"] for monitor in json.loads(hyprctl("monitors", "-j"))}
+    addresses = [
+        window["address"]
+        for window in json.loads(hyprctl("clients", "-j"))
+        if window["workspace"]["id"] in workspaces and not window["hidden"]
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+        jobs = {(address, prop): executor.submit(get_property, address, prop) for address in addresses for prop in PROPS}
+        state = {address: {prop: jobs[(address, prop)].result() for prop in PROPS} for address in addresses}
+    temporary = STATE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state))
+    temporary.replace(STATE)
+    apply(state, True)
+
+
+def restore():
+    if not STATE.exists():
+        return
+    state = json.loads(STATE.read_text())
+    apply(state, False)
+    STATE.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2 or sys.argv[1] not in {"hide", "restore"}:
+        raise SystemExit("usage: hypr-lock-window-opacity hide|restore")
+    globals()[sys.argv[1]]()

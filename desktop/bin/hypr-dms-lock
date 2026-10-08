@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -u
+umask 077
+
+if [[ "${1:-}" == "--startup" ]]; then
+    # IPC readiness alone does not mean the compositor accepted the lock.
+    for _ in {1..100}; do
+        dms ipc call lock lock >/dev/null 2>&1
+        if dms ipc call lock status 2>/dev/null | jq -e '.sessionLockSecure == true' >/dev/null 2>&1; then
+            exit 0
+        fi
+        sleep 0.2
+    done
+    exec hyprlock --grace 0 --immediate-render --no-fade-in
+fi
+
+wallpaper_ready=false
+if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    while IFS= read -r lock_screen; do
+        [[ -n "$lock_screen" ]] || continue
+        dms ipc call liveWallpaper captureLockFrame "$lock_screen" >/dev/null 2>&1
+        for _ in {1..8}; do
+            if [[ "$(dms ipc call liveWallpaper captureStatus "$lock_screen" 2>/dev/null)" == "READY" ]]; then
+                wallpaper_ready=true
+                break
+            fi
+            sleep 0.015
+        done
+    done < <(hyprctl monitors -j 2>/dev/null | jq -r '.[].name' 2>/dev/null)
+fi
+
+lock_action=lock
+if [[ "${1:-}" != "--startup" && "$wallpaper_ready" == true ]]; then
+    lock_action=lockAnimated
+fi
+
+if dms ipc call lock "$lock_action" >/dev/null 2>&1; then
+    exit 0
+fi
+
+exec hyprlock --grace 0 --immediate-render --no-fade-in

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+video="${1:?video path required}"
+[[ -f "$video" ]] || { printf 'Wallpaper not found: %s\n' "$video" >&2; exit 1; }
+
+payload="$(jq -cn --arg path "$video" '{command:["loadfile",$path,"replace"]}')"
+shopt -s nullglob
+for socket in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/live-wallpaper-*.sock; do
+    printf '%s\n' "$payload" | socat -T 1 - "UNIX-CONNECT:$socket" >/dev/null 2>&1 || true
+done
+

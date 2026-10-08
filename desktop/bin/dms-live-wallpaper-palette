@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+video="$(realpath -e -- "${1:?video path required}")"
+selected="$(jq -r '.liveWallpaper.videoPath // empty' "$HOME/.config/DankMaterialShell/plugin_settings.json")"
+if [[ "$selected" == '~/'* ]]; then
+    selected="$HOME/${selected#\~/}"
+fi
+[[ "$selected" == "$video" ]] || exit 0
+
+cache_dir="$HOME/.cache/dms-live-wallpapers/palette"
+mkdir -p -- "$cache_dir"
+key="$(printf '%s\n%s\n' "$video" "$(stat -c '%Y:%s' -- "$video")" | sha256sum | cut -c1-24)"
+still="$cache_dir/$key.jpg"
+if [[ ! -s "$still" ]]; then
+    tmp="$(mktemp "$cache_dir/.frame-XXXXXXXX.jpg")"
+    trap 'rm -f -- "$tmp"' EXIT
+    ffmpeg -v error -ss 1 -i "$video" -frames:v 1 -q:v 3 -y "$tmp"
+    mv -- "$tmp" "$still"
+fi
+
+# The frame is also the still wallpaper shown when video playback pauses.
+selected="$(jq -r '.liveWallpaper.videoPath // empty' "$HOME/.config/DankMaterialShell/plugin_settings.json")"
+if [[ "$selected" == '~/'* ]]; then
+    selected="$HOME/${selected#\~/}"
+fi
+[[ "$selected" == "$video" ]] || exit 0
+dms ipc call wallpaper set "$still"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ignore special/named workspaces and empty workspaces, including the current one.
+target=$(hyprctl -j workspaces | jq -er '[.[] | select(.id > 0 and .windows > 0) | .id] | (max // 0) + 1')
+case "${1:-focus}" in
+    focus) hyprctl dispatch "hl.dsp.focus({ workspace = $target })" ;;
+    move) hyprctl dispatch "hl.dsp.window.move({ workspace = $target })" ;;
+    *) exit 2 ;;
+esac

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+wallpaper_dir="${1:-$HOME/Videos/Wallpapers}"
+cache_dir="${2:-$HOME/.cache/dms-live-wallpapers}"
+picker_dir="${3:-$HOME/Pictures/Wallpapers}"
+mkdir -p "$cache_dir" "$picker_dir"
+
+find "$wallpaper_dir" -maxdepth 1 -type f \
+    \( -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov' \) \
+    -print0 | while IFS= read -r -d '' video; do
+        thumbnail="$cache_dir/${video##*/}.jpg"
+        picker_thumbnail="$picker_dir/${video##*/}.jpg"
+        if [[ ! -f "$thumbnail" || "$thumbnail" -ot "$video" ]]; then
+            ffmpeg -v error -y -ss 1 -i "$video" -frames:v 1 \
+                -vf "scale=640:360:force_original_aspect_ratio=increase,crop=640:360" \
+                -q:v 3 "$thumbnail"
+        fi
+
+        # DMS's real wallpaper browser only indexes image files. Expose each
+        # generated video preview there without duplicating the thumbnail.
+        if [[ ! -e "$picker_thumbnail" || -L "$picker_thumbnail" ]]; then
+            ln -sfn "$thumbnail" "$picker_thumbnail"
+        fi
+    done
