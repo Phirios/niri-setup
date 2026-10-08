@@ -1,0 +1,422 @@
+--- /dev/null
++++ b/Common/CheatsheetKeys.js
+@@ -0,0 +1,50 @@
++function normalize(token) {
++    const key = String(token).trim().toUpperCase();
++    const aliases = {CONTROL:"CTRL", "⌃":"CTRL", COMMAND:"SUPER", CMD:"SUPER", META:"SUPER", MOD:"SUPER", "⌘":"SUPER", OPTION:"ALT", "⌥":"ALT", "⇧":"SHIFT", ENTER:"RETURN", ESC:"ESCAPE", "/":"SLASH", "?":"SLASH", ",":"COMMA", " ":"SPACE"};
++    return aliases[key] || key;
++}
++function tokens(key) { return String(key).split("+").map(normalize).filter(Boolean); }
++function display(key) {
++    const labels = {SUPER:"⌘", CTRL:"⌃", ALT:"⌥", SHIFT:"⇧", RETURN:"Enter", SLASH:"/", COMMA:",", SPACE:"Space", "MOUSE:272":"Left click", "MOUSE:273":"Right click", WHEELSCROLLDOWN:"Wheel ↓", WHEELSCROLLUP:"Wheel ↑"};
++    return tokens(key).map(k => labels[k] || k).join(" ");
++}
++function matches(bind, category, query, keyQuery) {
++    if (keyQuery) {
++        const actual = tokens(bind.key || "");
++        return tokens(keyQuery).every(k => actual.includes(k));
++    }
++    const haystack = [bind.key, display(bind.key || ""), bind.desc, bind.action, category].join(" ").toLowerCase();
++    return String(query || "").trim().toLowerCase().split(/\s+/).every(word => haystack.includes(word));
++}
++
++function escapeHtml(text) {
++    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
++}
++function highlighted(text, query, keyQuery, isKey) {
++    const plain = String(text || "");
++    let words = [];
++    if (keyQuery && isKey)
++        words = tokens(keyQuery).map(k => display(k));
++    else if (!keyQuery)
++        words = String(query || "").trim().split(/\s+/).filter(Boolean).map(word => isKey && ["SUPER", "CTRL", "CONTROL", "ALT", "SHIFT", "COMMAND", "OPTION", "CMD", "META"].includes(word.toUpperCase()) ? display(word) : word);
++    const mask = Array(plain.length).fill(false);
++    const lower = plain.toLowerCase();
++    for (const word of words) {
++        if (!word) continue;
++        const needle = word.toLowerCase();
++        let pos = lower.indexOf(needle);
++        while (pos !== -1) {
++            for (let i = pos; i < pos + needle.length; i++) mask[i] = true;
++            pos = lower.indexOf(needle, pos + needle.length);
++        }
++    }
++    let result = "";
++    for (let start = 0; start < plain.length;) {
++        let end = start + 1;
++        while (end < plain.length && mask[end] === mask[start]) end++;
++        const part = escapeHtml(plain.slice(start, end));
++        result += mask[start] ? '<span style="color: #ffd34d; font-weight: 700">' + part + '</span>' : part;
++        start = end;
++    }
++    return result;
++}
+--- a/Modals/KeybindsContent.qml
++++ b/Modals/KeybindsContent.qml
+@@ -4,6 +4,7 @@
+ import qs.Common
+ import qs.Services
+ import qs.Widgets
++import "../Common/CheatsheetKeys.js" as CheatKeys
+ 
+ FocusScope {
+     id: content
+@@ -13,6 +14,48 @@
+     property bool showFloatingToggle: true
+     property bool floating: false
+     property alias searchField: searchField
++
++    property bool capturingKeys: false
++    property bool highlightMatches: false
++    property string capturedKey: ""
++    readonly property bool hasQuery: searchField.text.trim().length > 0 || capturedKey.length > 0
++
++    function captureKey(event) {
++        if (!capturingKeys)
++            return false;
++        event.accepted = true;
++        if (event.key === Qt.Key_Escape) {
++            capturingKeys = false;
++            searchField.forceActiveFocus();
++            return true;
++        }
++        const parts = [];
++        if (event.modifiers & Qt.MetaModifier) parts.push("SUPER");
++        if (event.modifiers & Qt.ControlModifier) parts.push("CTRL");
++        if (event.modifiers & Qt.AltModifier) parts.push("ALT");
++        if (event.modifiers & Qt.ShiftModifier) parts.push("SHIFT");
++        const modifier = [Qt.Key_Control, Qt.Key_Shift, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_Super_L, Qt.Key_Super_R].includes(event.key);
++        const names = {};
++        names[Qt.Key_Space] = "SPACE";
++        names[Qt.Key_Return] = "RETURN";
++        names[Qt.Key_Enter] = "RETURN";
++        names[Qt.Key_Tab] = "TAB";
++        names[Qt.Key_Backtab] = "TAB";
++        names[Qt.Key_Delete] = "DELETE";
++        names[Qt.Key_Left] = "LEFT";
++        names[Qt.Key_Right] = "RIGHT";
++        names[Qt.Key_Up] = "UP";
++        names[Qt.Key_Down] = "DOWN";
++        names[Qt.Key_Print] = "PRINT";
++        if (!modifier) {
++            const key = names[event.key] || (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F35 ? "F" + (event.key - Qt.Key_F1 + 1) : event.key >= 32 && event.key <= 126 ? String.fromCharCode(event.key) : event.text);
++            if (key) parts.push(CheatKeys.normalize(key));
++        }
++        capturedKey = parts.join("+");
++        searchField.text = CheatKeys.display(capturedKey);
++        if (!modifier) capturingKeys = false;
++        return true;
++    }
+ 
+     signal closeRequested
+     signal floatingToggleRequested
+@@ -34,6 +77,7 @@
+     }
+ 
+     Keys.onPressed: event => {
++        if (captureKey(event)) return;
+         switch (event.key) {
+         case Qt.Key_J:
+             if (event.modifiers & Qt.ControlModifier) {
+@@ -86,65 +130,199 @@
+                 onClicked: content.floatingToggleRequested()
+             }
+ 
+-            DankTextField {
++        }
++
++        RowLayout {
++            id: searchRow
++            width: parent.width
++            spacing: Theme.spacingS
++
++            Rectangle {
+                 id: searchField
+-                Layout.alignment: Qt.AlignRight
+-                leftIconName: "search"
+-                keyForwardTargets: [content]
+-                onTextEdited: searchDebounce.restart()
+-                Keys.onEscapePressed: event => {
+-                    content.closeRequested();
+-                    event.accepted = true;
+-                }
+-            }
+-        }
+-
+-        Timer {
+-            id: searchDebounce
+-            interval: 50
+-            repeat: false
+-            onTriggered: {
+-                mainFlickable.categories = mainFlickable.generateCategories(searchField.text);
+-            }
++                Layout.fillWidth: true
++                Layout.minimumWidth: 180
++                Layout.preferredWidth: 420
++                implicitHeight: 40
++                radius: 10
++                color: "#22262e"
++                border.color: searchInput.activeFocus ? Theme.primary : "#727780"
++                border.width: searchInput.activeFocus ? 2 : 1
++                property alias text: searchInput.text
++                function forceActiveFocus() { searchInput.forceActiveFocus(); }
++                function clear() { searchInput.clear(); }
++
++                DankIcon {
++                    anchors.left: parent.left
++                    anchors.leftMargin: 12
++                    anchors.verticalCenter: parent.verticalCenter
++                    name: content.capturingKeys ? "keyboard" : "search"
++                    size: 20
++                    color: Theme.primary
++                }
++
++                TextInput {
++                    id: searchInput
++                    anchors.fill: parent
++                    anchors.leftMargin: 42
++                    anchors.rightMargin: 38
++                    anchors.topMargin: 4
++                    anchors.bottomMargin: 4
++                    font.family: "Noto Sans"
++                    font.pixelSize: 16
++                    color: "#f4f4f5"
++                    renderType: TextInput.NativeRendering
++                    selectionColor: Theme.primary
++                    selectedTextColor: "#15171b"
++                    verticalAlignment: TextInput.AlignVCenter
++                    clip: true
++                    selectByMouse: true
++                    activeFocusOnTab: true
++                    KeyNavigation.tab: keyCaptureButton
++                    Keys.forwardTo: [content]
++                    onTextEdited: content.capturedKey = ""
++                    Keys.onEscapePressed: event => {
++                        if (content.capturingKeys) content.capturingKeys = false;
++                        else content.closeRequested();
++                        event.accepted = true;
++                    }
++                }
++
++                StyledText {
++                    anchors.fill: searchInput
++                    text: content.capturingKeys ? "Press a shortcut… Esc cancels" : "Search actions, titles, or keys…"
++                    color: "#afb5c0"
++                    font.pixelSize: 14
++                    visible: searchInput.text.length === 0
++                }
++
++                DankActionButton {
++                    anchors.right: parent.right
++                    anchors.rightMargin: 4
++                    anchors.verticalCenter: parent.verticalCenter
++                    iconName: "close"
++                    visible: searchInput.text.length > 0
++                    tooltipText: "Clear search"
++                    onClicked: {
++                        content.capturedKey = "";
++                        searchInput.clear();
++                        searchInput.forceActiveFocus();
++                    }
++                }
++            }
++
++            DankButton {
++                id: keyCaptureButton
++                Layout.minimumWidth: 140
++                Layout.preferredWidth: 140
++                Layout.maximumWidth: 140
++                Layout.preferredHeight: 40
++                horizontalPadding: 12
++                KeyNavigation.tab: viewModeButton
++                text: content.capturingKeys ? "Listening…" : "Keypress"
++                iconName: "keyboard"
++                backgroundColor: content.capturingKeys ? Theme.primary : "#303640"
++                textColor: content.capturingKeys ? "#15202b" : "#f4f4f5"
++                onClicked: {
++                    content.capturingKeys = !content.capturingKeys;
++                    if (content.capturingKeys) {
++                        content.capturedKey = "";
++                        searchField.clear();
++                        content.forceActiveFocus();
++                    } else searchField.forceActiveFocus();
++                }
++            }
++
++            DankButton {
++                id: viewModeButton
++                Layout.minimumWidth: 180
++                Layout.preferredWidth: 180
++                Layout.maximumWidth: 180
++                Layout.preferredHeight: 40
++                horizontalPadding: 12
++                text: content.highlightMatches ? "Highlight matches" : "Filter matches"
++                iconName: content.highlightMatches ? "highlight" : "filter_alt"
++                onClicked: content.highlightMatches = !content.highlightMatches
++            }
++        }
++
++        StyledText {
++            id: searchHint
++            width: parent.width
++            text: "⌘ Super   ⌥ Alt   ⌃ Ctrl   ⇧ Shift" + (content.capturedKey ? "   •   Keys: " + CheatKeys.display(content.capturedKey) : "")
++            color: Theme.primary
++            font.pixelSize: Theme.fontSizeSmall
+         }
+ 
+         DankFlickable {
+             id: mainFlickable
+             width: parent.width
+-            height: parent.height - parent.spacing - 40
++            height: parent.height - searchRow.height - searchHint.height - 40 - parent.spacing * 3
+             contentWidth: rowLayout.implicitWidth
+             contentHeight: rowLayout.implicitHeight
+             clip: true
+ 
+-            property var rawBinds: KeybindsService.cheatsheet.binds || {}
++            // Give the Hyprland overlay descriptive headings without changing bindings.
++            function categorizedBinds(sheet) {
++                const original = sheet.binds || {};
++                if (sheet.provider !== "hyprland")
++                    return original;
++                const grouped = {};
++                for (const originalCategory in original) {
++                    for (const bind of original[originalCategory]) {
++                        const action = bind.action || "";
++                        const desc = (bind.desc || "").toLowerCase();
++                        let category = originalCategory;
++                        if (/screenshot|\bgrim\b|\bslurp\b/.test(action + " " + desc))
++                            category = "Screenshots";
++                        else if (/wpctl|ipc call (audio|mic) /.test(action))
++                            category = "Audio & Microphone";
++                        else if (/playerctl|ipc call mpris /.test(action))
++                            category = "Media Playback";
++                        else if (/ipc call (spotlight|spotlight-bar|launcher) |exec (ghostty|dolphin|wofi)\b/.test(action))
++                            category = "Applications & Launchers";
++                        else if (/ipc call (clipboard|notepad|dmsAgent) /.test(action))
++                            category = "Clipboard, Notes & AI";
++                        else if (/ipc call (powermenu|lock) |hypr-dms-lock|^exit\b/.test(action))
++                            category = "Session & Power";
++                        else if (/ipc call (hypr|keybinds) /.test(action))
++                            category = "Overview & Cheat Sheet";
++                        else if (/ipc call dash .*wallpaper/.test(action))
++                            category = "Wallpaper & Appearance";
++                        else if (/ipc call (settings|control-center|notifications|processlist) /.test(action))
++                            category = "Panels & Settings";
++                        else if (/^movefocus\b/.test(action))
++                            category = "Window Focus";
++                        else if (/^(movewindow|resizewindow)\b/.test(action))
++                            category = "Window Movement & Resizing";
++                        else if (/^movetoworkspace\b/.test(action))
++                            category = "Move to Workspace";
++                        else if (/^workspace\b/.test(action))
++                            category = "Workspace Navigation";
++                        else if (originalCategory === "Window")
++                            category = "Window Controls";
++                        if (!grouped[category])
++                            grouped[category] = [];
++                        grouped[category].push(bind);
++                    }
++                }
++                return grouped;
++            }
++
++            property var rawBinds: categorizedBinds(KeybindsService.cheatsheet)
+ 
+             function generateCategories(query) {
+-                const lowerQuery = query ? query.toLowerCase().trim() : "";
+-                const lowerQueryWords = query.split(/\s+/);
+                 const processed = {};
+ 
+                 for (const cat in rawBinds) {
+                     const binds = rawBinds[cat];
+-                    const catLower = cat.toLowerCase();
+                     const subcats = {};
+                     let hasSubcats = false;
+                     for (let i = 0; i < binds.length; i++) {
+                         const bind = binds[i];
+-                        const keyLower = (bind.key || "").toLowerCase();
+-                        const descLower = (bind.desc || "").toLowerCase();
+-                        const actionLower = (bind.action || "").toLowerCase();
+ 
+                         if (bind.hideOnOverlay)
+                             continue;
+-                        let shouldContinue = false;
+-                        for (let j = 0; j < lowerQueryWords.length; j++) {
+-                            const word = lowerQueryWords[j];
+-                            if (!(word.length === 0 || keyLower.includes(word) || descLower.includes(word) || catLower.includes(word) || actionLower.includes(word))) {
+-                                shouldContinue = true;
+-                                break;
+-                            }
+-                        }
+-                        if (shouldContinue)
++                        if (!content.highlightMatches && !CheatKeys.matches(bind, cat, query, content.capturedKey))
+                             continue;
+ 
+                         if (bind.subcat) {
+@@ -172,7 +350,7 @@
+                 return processed;
+             }
+ 
+-            property var categories: generateCategories("")
++            property var categories: generateCategories(searchField.text)
+ 
+             function estimateCategoryHeight(catName) {
+                 const catData = categories[catName];
+@@ -286,8 +464,12 @@
+                                                     model: parent.parent.subcatBinds
+ 
+                                                     Item {
++                                                        id: bindRow
+                                                         width: parent.width
+                                                         height: 24
++
++                                                        readonly property bool matched: content.hasQuery && CheatKeys.matches(modelData, categoryColumn.catName, searchField.text, content.capturedKey)
++                                                        opacity: content.highlightMatches && content.hasQuery && !matched ? 0.35 : 1
+ 
+                                                         StyledRect {
+                                                             id: keyBadge
+@@ -299,11 +481,12 @@
+                                                             StyledText {
+                                                                 id: keyText
+                                                                 anchors.centerIn: parent
+-                                                                color: Theme.secondary
+-                                                                text: (modelData.key || "").replace(/\+/g, " + ")
++                                                                color: bindRow.matched ? "#c7a75c" : Theme.secondary
++                                                                textFormat: Text.RichText
++                                                                text: bindRow.matched ? CheatKeys.highlighted(CheatKeys.display(modelData.key || ""), searchField.text, content.capturedKey, true) : CheatKeys.escapeHtml(CheatKeys.display(modelData.key || ""))
+                                                                 font.pixelSize: Theme.fontSizeSmall
+                                                                 font.weight: Font.Medium
+-                                                                isMonospace: true
++                                                                font.family: "Noto Sans"
+                                                                 elide: Text.ElideRight
+                                                                 width: Math.min(implicitWidth, 148)
+                                                             }
+@@ -314,7 +497,9 @@
+                                                             anchors.leftMargin: 170
+                                                             anchors.right: parent.right
+                                                             anchors.verticalCenter: parent.verticalCenter
+-                                                            text: modelData.desc || modelData.action || ""
++                                                            color: bindRow.matched ? "#c7a75c" : Theme.surfaceText
++                                                            textFormat: Text.RichText
++                                                            text: bindRow.matched ? CheatKeys.highlighted(modelData.desc || modelData.action || "", searchField.text, content.capturedKey, false) : CheatKeys.escapeHtml(modelData.desc || modelData.action || "")
+                                                             font.pixelSize: Theme.fontSizeSmall
+                                                             opacity: 0.9
+                                                             elide: Text.ElideRight
+--- a/Modals/KeybindsModalOverlay.qml
++++ b/Modals/KeybindsModalOverlay.qml
+@@ -1,5 +1,6 @@
+ import QtQml
+ import QtQuick
++import Quickshell.Wayland
+ import qs.Common
+ import qs.Modals
+ import qs.Modals.Common
+@@ -12,6 +13,7 @@
+ 
+     layerNamespace: "dms:keybinds"
+     useOverlayLayer: true
++    customKeyboardFocus: contentLoader.item?.capturingKeys ? WlrKeyboardFocus.Exclusive : null
+     property real _maxW: Math.min(overlay.screenWidth * 0.92, 1200)
+     property real _maxH: Math.min(overlay.screenHeight * 0.92, 900)
+     modalWidth: _maxW
