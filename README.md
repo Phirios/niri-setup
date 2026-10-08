@@ -25,7 +25,7 @@ Use `./install.sh --skip-packages` when niri and DMS are already installed.
 
 | Step | Result |
 |------|--------|
-| Packages | `niri`, `xwayland-satellite`, `ghostty`, `dms` (from the `avengemedia/dms` COPR) and the tools the plugins call |
+| Packages | `niri`, `xwayland-satellite`, `ghostty`, `wtype`, `dms` (from the `avengemedia/dms` COPR) and the tools the plugins call |
 | niri config | The DMS default config plus persistent 60%-keyboard-friendly keybinds |
 | Theme | `Ink`: near-black surfaces, `#d97757` accent, blur on, translucent bar and popups |
 | AI Limit Counter | Clones [AILimitCounter](https://github.com/firatege/AILimitCounter), builds its helper into `~/.local/bin` and installs its DMS plugin |
@@ -42,6 +42,11 @@ Anything that already exists is copied to a `.bak-<timestamp>` sibling before it
 | Key | Action |
 |-----|--------|
 | `Super+T`, `Super+Enter` | Ghostty |
+| `Ctrl+,`, `Ctrl+.` | Beginning/end of current line |
+| `Ctrl+<` / `Ctrl+>` | Select to line beginning/end |
+| `Alt+,/.` | Previous/next word |
+| `Alt+<` / `Alt+>` | Select previous/next word |
+| `Alt+Left`, `Alt+Right` | Move by word |
 | `Super+Space` | App launcher |
 | `Super+Q` | Close window |
 | `Super+H/J/K/L` | Focus left/down/up/right |

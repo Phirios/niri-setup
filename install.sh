@@ -17,7 +17,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 DMS_COPR="avengemedia/dms"
 PACKAGES=(
-  niri xwayland-satellite xdg-desktop-portal-gnome ghostty
+  niri xwayland-satellite xdg-desktop-portal-gnome ghostty wtype
   git cargo python3 jq
   dbus-devel pkgconf-pkg-config
   gtk3 xdg-utils libnotify playerctl wl-clipboard procps-ng
@@ -195,6 +195,10 @@ or run this again with --wallpaper FILE.
 
 Keys (Super is the Windows key):
   Super+T/Enter Ghostty             Super+Space   app launcher
+  Ctrl+,        beginning of line   Ctrl+.       end of line
+  Ctrl+</>      select to line start/end
+  Alt+,/.       move by word        Alt+</>      select by word
+  Alt+Left/Right move by word
   Super+H/J/K/L focus windows       add Shift to move them
   Super+U/I     change workspace    add Ctrl to move a window
   Super+Q       close window        Super+D       show desktop

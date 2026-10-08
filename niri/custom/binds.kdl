@@ -5,6 +5,16 @@ binds {
     Mod+Return repeat=false hotkey-overlay-title="Open Ghostty" { spawn "ghostty"; }
     Mod+Alt+M hotkey-overlay-title="Task Manager" { spawn "dms" "ipc" "call" "processlist" "focusOrToggle"; }
     Mod+Alt+Comma hotkey-overlay-title="Settings" { spawn "dms" "ipc" "call" "settings" "focusOrToggle"; }
+    Ctrl+Comma repeat=false hotkey-overlay-title="Beginning of line" { spawn "wtype" "-k" "Home"; }
+    Ctrl+Period repeat=false hotkey-overlay-title="End of line" { spawn "wtype" "-k" "End"; }
+    Ctrl+Less repeat=false hotkey-overlay-title="Select to beginning of line" { spawn "wtype" "-M" "shift" "-k" "Home"; }
+    Ctrl+Greater repeat=false hotkey-overlay-title="Select to end of line" { spawn "wtype" "-M" "shift" "-k" "End"; }
+    Alt+Comma repeat=false hotkey-overlay-title="Previous word" { spawn "wtype" "-M" "alt" "-k" "Left"; }
+    Alt+Period repeat=false hotkey-overlay-title="Next word" { spawn "wtype" "-M" "alt" "-k" "Right"; }
+    Alt+Less repeat=false hotkey-overlay-title="Select previous word" { spawn "wtype" "-M" "alt" "-M" "shift" "-k" "Left"; }
+    Alt+Greater repeat=false hotkey-overlay-title="Select next word" { spawn "wtype" "-M" "alt" "-M" "shift" "-k" "Right"; }
+    Alt+Left repeat=false hotkey-overlay-title="Previous word" { spawn "wtype" "-M" "alt" "-k" "Left"; }
+    Alt+Right repeat=false hotkey-overlay-title="Next word" { spawn "wtype" "-M" "alt" "-k" "Right"; }
 
     // Window focus and movement
     Mod+H { focus-column-left; }
