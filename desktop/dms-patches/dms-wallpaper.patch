@@ -1,0 +1,167 @@
+--- a/Modules/DankDash/WallpaperTab.qml
++++ b/Modules/DankDash/WallpaperTab.qml
+@@ -5,6 +5,7 @@
+ import Quickshell.Widgets
+ import qs.Common
+ import qs.Modals.FileBrowser
++import qs.Services
+ import qs.Widgets
+ 
+ Item {
+@@ -33,6 +34,7 @@
+     property bool enableAnimation: false
+     property string homeDir: StandardPaths.writableLocation(StandardPaths.HomeLocation)
+     property string selectedFileName: ""
++    property string liveVideoPath: expandHome(SettingsData.getPluginSetting("liveWallpaper", "videoPath", ""))
+     property var targetScreen: null
+     property string targetScreenName: targetScreen ? targetScreen.name : ""
+     // Shared with the wallpaper FileBrowser via CacheData.fileBrowserSettings["wallpaper"]
+@@ -43,6 +45,50 @@
+     property int pagerCachePages: 1
+ 
+     signal requestTabChange(int newIndex)
++
++    function normalizeLocalPath(path) {
++        let value = String(path || "").replace(/^file:\/\//, "");
++        try {
++            value = decodeURIComponent(value);
++        } catch (e) {
++        }
++        return value;
++    }
++
++    function pathsEqual(left, right) {
++        return normalizeLocalPath(left) === normalizeLocalPath(right);
++    }
++
++    function expandHome(path) {
++        const value = normalizeLocalPath(path);
++        const localHome = normalizeLocalPath(homeDir);
++        if (value === "~")
++            return localHome;
++        return value.indexOf("~/") === 0 ? localHome + value.slice(1) : value;
++    }
++
++    function isLiveWallpaperThumbnail(path) {
++        return /\.(mp4|webm|mkv|mov)\.jpg$/i.test(String(path || ""));
++    }
++
++    function videoPathForThumbnail(path) {
++        const fileName = String(path).substring(String(path).lastIndexOf('/') + 1);
++        return expandHome("~") + "/Videos/Wallpapers/" + fileName.replace(/\.jpg$/i, "");
++    }
++
++    function thumbnailPathForVideo(path) {
++        if (!path)
++            return "";
++        const fileName = String(path).substring(String(path).lastIndexOf('/') + 1);
++        return expandHome("~") + "/Pictures/Wallpapers/" + fileName + ".jpg";
++    }
++
++    function setBuiltInWallpaperDisabled(disabled) {
++        const prefs = SettingsData.screenPreferences || {};
++        const updated = Object.assign({}, prefs);
++        updated.wallpaper = disabled ? [] : ["all"];
++        SettingsData.set("screenPreferences", updated);
++    }
+ 
+     function refreshAfterSort() {
+         // Defer until FolderListModel finishes reordering.
+@@ -107,7 +153,7 @@
+             let matched = false;
+             if (currentWallpaper) {
+                 for (let i = 0; i < paths.length; i++) {
+-                    if (paths[i] === currentWallpaper) {
++                    if (pathsEqual(paths[i], currentWallpaper)) {
+                         currentPage = Math.floor(i / itemsPerPage);
+                         gridIndex = i % itemsPerPage;
+                         matched = true;
+@@ -183,6 +229,8 @@
+     }
+ 
+     function getCurrentWallpaper() {
++        if (liveVideoPath)
++            return thumbnailPathForVideo(liveVideoPath);
+         if (SessionData.perMonitorWallpaper && targetScreenName) {
+             return SessionData.getMonitorWallpaper(targetScreenName);
+         }
+@@ -190,6 +238,17 @@
+     }
+ 
+     function setCurrentWallpaper(path) {
++        if (isLiveWallpaperThumbnail(path)) {
++            const videoPath = videoPathForThumbnail(path);
++            liveVideoPath = videoPath;
++            setBuiltInWallpaperDisabled(true);
++            PluginService.savePluginData("liveWallpaper", "videoPath", videoPath);
++            return;
++        }
++
++        liveVideoPath = "";
++        PluginService.savePluginData("liveWallpaper", "videoPath", "");
++        setBuiltInWallpaperDisabled(false);
+         if (SessionData.perMonitorWallpaper && targetScreenName) {
+             SessionData.setMonitorWallpaper(targetScreenName, path);
+             SessionData.setMonitorCyclingFolderPath(targetScreenName, "");
+@@ -227,6 +286,17 @@
+         target: CacheData
+         function onFileBrowserSettingsChanged() {
+             loadSort();
++        }
++    }
++
++    Connections {
++        target: PluginService
++        function onPluginDataChanged(pluginId) {
++            if (pluginId !== "liveWallpaper")
++                return;
++            root.liveVideoPath = root.expandHome(SettingsData.getPluginSetting("liveWallpaper", "videoPath", ""));
++            if (root.visible && root.active)
++                root.setInitialSelection();
+         }
+     }
+ 
+@@ -400,7 +470,7 @@
+ 
+         for (var i = 0; i < wallpaperCount; i++) {
+             const filePath = wallpaperPathAt(i);
+-            if (filePath === currentWallpaper) {
++            if (pathsEqual(filePath, currentWallpaper)) {
+                 const targetPage = Math.floor(i / itemsPerPage);
+                 const targetIndex = i % itemsPerPage;
+                 currentPage = targetPage;
+@@ -684,7 +754,7 @@
+                         height: pageGrid.cellHeight
+ 
+                         property string wallpaperPath: modelData || ""
+-                        property bool isSelected: getCurrentWallpaper() === modelData
++                        property bool isSelected: pathsEqual(getCurrentWallpaper(), modelData)
+ 
+                         Rectangle {
+                             id: wallpaperCard
+@@ -725,6 +795,25 @@
+                                             easing.type: Theme.standardEasing
+                                         }
+                                     }
++                                }
++                            }
++
++                            Rectangle {
++                                anchors.top: parent.top
++                                anchors.right: parent.right
++                                anchors.margins: Theme.spacingS
++                                width: 26
++                                height: 26
++                                radius: 13
++                                color: Theme.primary
++                                visible: isSelected
++                                z: 4
++
++                                DankIcon {
++                                    anchors.centerIn: parent
++                                    name: "check"
++                                    size: 18
++                                    color: Theme.onPrimary
+                                 }
+                             }
+ 
