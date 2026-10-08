@@ -1,0 +1,2377 @@
+--- a/Modules/DankBar/DankBarWindow.qml
++++ b/Modules/DankBar/DankBarWindow.qml
+@@ -137,6 +137,7 @@
+     DankBarBody {
+         id: body
+         anchors.fill: parent
++        opacity: IdleService.manualLockHandoffHidden ? 0 : 1
+         hostWindow: barWindow
+         modelData: barWindow.modelData
+         rootWindow: barWindow.rootWindow
+--- a/Modules/DankBar/LeftSection.qml
++++ b/Modules/DankBar/LeftSection.qml
+@@ -58,7 +58,7 @@
+                     property var itemData: modelData
+                     visible: widgetLoader.active && widgetLoader.widgetEnabled
+                     width: widgetLoader.item ? widgetLoader.item.width : 0
+-                    height: widgetLoader.item ? widgetLoader.item.height : 0
++                    height: (root.barConfig?.macNotchWidth ?? 0) > 0 ? root.barThickness : (widgetLoader.item ? widgetLoader.item.height : 0)
+                     onXChanged: root.refreshBlur()
+                     WidgetHost {
+                         id: widgetLoader
+--- a/Modules/DankBar/RightSection.qml
++++ b/Modules/DankBar/RightSection.qml
+@@ -60,7 +60,7 @@
+                     property var itemData: modelData
+                     visible: widgetLoader.active && widgetLoader.widgetEnabled
+                     width: widgetLoader.item ? widgetLoader.item.width : 0
+-                    height: widgetLoader.item ? widgetLoader.item.height : 0
++                    height: (root.barConfig?.macNotchWidth ?? 0) > 0 ? root.barThickness : (widgetLoader.item ? widgetLoader.item.height : 0)
+                     onXChanged: root.refreshBlur()
+                     WidgetHost {
+                         id: widgetLoader
+--- a/Modules/DankBar/Widgets/AudioVisualization.qml
++++ b/Modules/DankBar/Widgets/AudioVisualization.qml
+@@ -11,50 +11,82 @@
+     readonly property bool isPlaying: activePlayer !== null && activePlayer.playbackState === MprisPlaybackState.Playing
+     readonly property bool live: visible && enabled && (Window.window?.visible ?? false) && isPlaying
+     readonly property bool available: CavaService.cavaAvailable && SettingsData.audioVisualizerEnabled
+-    readonly property bool showBars: idleIconName === "" || (available && live)
++    readonly property bool streamActive: enabled && isPlaying && available
++    readonly property bool showBars: streamActive && (bars.bandsA.x + bars.bandsA.y + bars.bandsA.z + bars.bandsA.w + bars.bandsB.x + bars.bandsB.y > 0.03)
+ 
+-    property real maxBarHeight: Theme.iconSize - 2
++    property real maxBarHeight: Math.min(12, Math.max(minBarHeight, height - 4))
+     readonly property real minBarHeight: 3
+-    property color barColor: Theme.primary
++    property color barColor: SettingsData.mediaCenterAmbientEnabled && activePlayer ? MediaAccentService.artworkAccent : Theme.primary
++    Behavior on barColor { ColorAnimation { duration: 350 } }
+     property string idleIconName: ""
++    property var targetBands: [0, 0, 0, 0, 0, 0]
++    property var displayedBands: [0, 0, 0, 0, 0, 0]
++    property bool smoothing: false
+ 
+     width: 20
+     height: Theme.iconSize
+ 
++    function sampleBands(snap) {
++        const values = CavaService.values;
++        if (values.length < 6) return;
++        const next = Array.from({length: 6}, (_, i) => Math.max(0, Math.min(1, (values[i] || 0) * 0.01)));
++        targetBands = next;
++        if (snap) {
++            displayedBands = next.slice();
++            bars.bandsA = Qt.vector4d(next[0], next[1], next[2], next[3]);
++            bars.bandsB = Qt.vector2d(next[4], next[5]);
++            smoothing = false;
++        } else {
++            smoothing = true;
++        }
++    }
+     onLiveChanged: {
+-        if (!live) {
++        // Popup transitions hide this face without stopping playback.
++        if (live && available) sampleBands(true);
++    }
++    onStreamActiveChanged: {
++        if (!streamActive) {
++            smoothing = false;
++            targetBands = [0, 0, 0, 0, 0, 0];
++            displayedBands = [0, 0, 0, 0, 0, 0];
+             bars.bandsA = Qt.vector4d(0, 0, 0, 0);
+             bars.bandsB = Qt.vector2d(0, 0);
+         }
+     }
++    Component.onCompleted: if (streamActive) sampleBands(true)
+ 
+     Loader {
+-        active: root.live
++        active: root.streamActive
+         sourceComponent: Component {
+-            Ref {
+-                service: CavaService
+-            }
++            Ref { service: CavaService }
+         }
+     }
+-
+     Connections {
+         target: CavaService
+-        enabled: root.live
+-        function onValuesChanged() {
+-            const v = CavaService.values;
+-            if (v.length < 6)
+-                return;
+-            const n = i => {
+-                const x = v[i];
+-                const level = x <= 0 ? 0 : x >= 100 ? 1 : Math.sqrt(x * 0.01);
+-                return Math.round(level * 32) / 32;
+-            };
+-            const a = Qt.vector4d(n(0), n(1), n(2), n(3));
+-            const b = Qt.vector2d(n(4), n(5));
+-            if (a == bars.bandsA && b == bars.bandsB)
+-                return;
+-            bars.bandsA = a;
+-            bars.bandsB = b;
++        enabled: root.streamActive
++        function onValuesChanged() { root.sampleBands(!root.live); }
++    }
++
++    // Interpolate audio samples on display frames, then stop once settled.
++    FrameAnimation {
++        running: root.live && root.available && root.smoothing
++        onTriggered: {
++            const alpha = 1 - Math.exp(-Math.min(frameTime, 0.05) / 0.025);
++            const d = root.displayedBands;
++            const t = root.targetBands;
++            let pending = false;
++            for (let i = 0; i < 6; i++) {
++                const gap = t[i] - d[i];
++                if (Math.abs(gap) < 0.001) {
++                    d[i] = t[i];
++                } else {
++                    d[i] += gap * alpha;
++                    pending = true;
++                }
++            }
++            bars.bandsA = Qt.vector4d(d[0], d[1], d[2], d[3]);
++            bars.bandsB = Qt.vector2d(d[4], d[5]);
++            root.smoothing = pending;
+         }
+     }
+ 
+@@ -74,11 +106,18 @@
+         fragmentShader: Qt.resolvedUrl("../../../Shaders/qsb/viz_bars.frag.qsb")
+     }
+ 
+-    DankIcon {
++    Row {
+         anchors.centerIn: parent
+         visible: !root.showBars
+-        name: root.idleIconName
+-        size: Math.min(parent.width, parent.height)
+-        color: root.barColor
++        spacing: 1
++        Repeater {
++            model: 6
++            Rectangle {
++                width: 2.5
++                height: 2.5
++                radius: 1.25
++                color: root.barColor
++            }
++        }
+     }
+ }
+--- a/Modules/DankBar/Widgets/Battery.qml
++++ b/Modules/DankBar/Widgets/Battery.qml
+@@ -143,7 +143,7 @@
+                     size: Theme.barIconSize(battery.barThickness, undefined, battery.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+                     color: {
+                         if (!BatteryService.batteryAvailable) {
+-                            return Theme.widgetIconColor;
++                            return Theme.barColor("widgetIconColor", battery);
+                         }
+ 
+                         if (battery.levelColors) {
+@@ -155,10 +155,10 @@
+                         }
+ 
+                         if (BatteryService.isCharging || BatteryService.isPluggedIn) {
+-                            return Theme.primary;
+-                        }
+-
+-                        return Theme.widgetIconColor;
++                            return Theme.barColor("primary", battery);
++                        }
++
++                        return Theme.barColor("widgetIconColor", battery);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -177,7 +177,7 @@
+                 StyledText {
+                     text: battery.verticalDisplayText
+                     font.pixelSize: Theme.barTextSize(battery.barThickness, battery.barConfig?.fontScale, battery.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", battery)
+                     horizontalAlignment: Text.AlignHCenter
+                     anchors.horizontalCenter: parent.horizontalCenter
+                     visible: BatteryService.batteryAvailable && battery.verticalDisplayText !== ""
+@@ -196,7 +196,7 @@
+                     size: Theme.barIconSize(battery.barThickness, -4, battery.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+                     color: {
+                         if (!BatteryService.batteryAvailable) {
+-                            return Theme.widgetIconColor;
++                            return Theme.barColor("widgetIconColor", battery);
+                         }
+ 
+                         if (battery.levelColors) {
+@@ -208,10 +208,10 @@
+                         }
+ 
+                         if (BatteryService.isCharging || BatteryService.isPluggedIn) {
+-                            return Theme.primary;
+-                        }
+-
+-                        return Theme.widgetIconColor;
++                            return Theme.barColor("primary", battery);
++                        }
++
++                        return Theme.barColor("widgetIconColor", battery);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -234,7 +234,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(battery.barThickness, battery.barConfig?.fontScale, battery.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", battery)
+                     anchors.verticalCenter: parent.verticalCenter
+                     visible: BatteryService.batteryAvailable && battery.horizontalSideText !== ""
+                 }
+--- a/Modules/DankBar/Widgets/CapsLockIndicator.qml
++++ b/Modules/DankBar/Widgets/CapsLockIndicator.qml
+@@ -55,7 +55,7 @@
+                 anchors.centerIn: parent
+                 name: "shift_lock"
+                 size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: Theme.primary
++                color: Theme.barColor("primary", root)
+             }
+         }
+     }
+--- a/Modules/DankBar/Widgets/ClipboardButton.qml
++++ b/Modules/DankBar/Widgets/ClipboardButton.qml
+@@ -113,8 +113,8 @@
+         height: root.height + root.topMargin + root.bottomMargin
+         acceptedButtons: Qt.LeftButton | Qt.RightButton
+         cursorShape: Qt.PointingHandCursor
+-        onPressed: function (mouse) {
+-            root.triggerRipple(this, mouse.x, mouse.y);
++        onPressed: mouse => root.triggerRipple(this, mouse.x, mouse.y)
++        onClicked: function (mouse) {
+             switch (mouse.button) {
+             case Qt.RightButton:
+                 openContextMenu();
+@@ -150,7 +150,7 @@
+                 anchors.centerIn: parent
+                 name: root.dropConfirmed ? "check" : "content_paste"
+                 size: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: root.dropConfirmed || draggingOver ? Theme.primary : Theme.widgetIconColor
++                color: root.dropConfirmed || draggingOver ? Theme.barColor("primary", root) : Theme.barColor("widgetIconColor", root)
+                 scale: draggingOver ? 1.2 : 1.0
+ 
+                 Behavior on color {
+--- a/Modules/DankBar/Widgets/Clock.qml
++++ b/Modules/DankBar/Widgets/Clock.qml
+@@ -41,7 +41,7 @@
+                             return String(display).padStart(2, '0').charAt(0);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -56,7 +56,7 @@
+                             return String(display).padStart(2, '0').charAt(1);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -70,7 +70,7 @@
+                     StyledText {
+                         text: String(systemClock?.date?.getMinutes()).padStart(2, '0').charAt(0)
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -79,7 +79,7 @@
+                     StyledText {
+                         text: String(systemClock?.date?.getMinutes()).padStart(2, '0').charAt(1)
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -94,7 +94,7 @@
+                     StyledText {
+                         text: String(systemClock?.date?.getSeconds()).padStart(2, '0').charAt(0)
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -103,7 +103,7 @@
+                     StyledText {
+                         text: String(systemClock?.date?.getSeconds()).padStart(2, '0').charAt(1)
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -138,7 +138,7 @@
+                             return value.charAt(0);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -153,7 +153,7 @@
+                             return value.charAt(1);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -174,7 +174,7 @@
+                             return value.charAt(0);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -189,7 +189,7 @@
+                             return value.charAt(1);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         width: Math.round(font.pixelSize * 0.6)
+                         horizontalAlignment: Text.AlignHCenter
+                         verticalAlignment: Text.AlignBottom
+@@ -257,7 +257,7 @@
+                             visible: clockRow.hoursStr.length > 1
+                             text: clockRow.hoursStr.charAt(0)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -265,7 +265,7 @@
+                         StyledText {
+                             text: clockRow.hoursStr.length > 1 ? clockRow.hoursStr.charAt(1) : clockRow.hoursStr.charAt(0)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -273,7 +273,7 @@
+                         StyledText {
+                             text: ":"
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: Math.ceil(implicitWidth)
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -281,7 +281,7 @@
+                         StyledText {
+                             text: clockRow.minutesStr.charAt(0)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -289,7 +289,7 @@
+                         StyledText {
+                             text: clockRow.minutesStr.charAt(1)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -298,7 +298,7 @@
+                             visible: SettingsData.showSeconds
+                             text: ":"
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: Math.ceil(implicitWidth)
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -307,7 +307,7 @@
+                             visible: SettingsData.showSeconds
+                             text: clockRow.secondsStr.charAt(0)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -316,7 +316,7 @@
+                             visible: SettingsData.showSeconds
+                             text: clockRow.secondsStr.charAt(1)
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: clockRow.digitWidth
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -325,7 +325,7 @@
+                             visible: !SettingsData.use24HourClock
+                             text: clockRow.ampmStr
+                             font.pixelSize: clockRow.fontSize
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             width: Math.ceil(implicitWidth)
+                             horizontalAlignment: Text.AlignHCenter
+                         }
+@@ -344,7 +344,7 @@
+                             return systemClock?.date?.toLocaleDateString(I18n.locale(), "ddd d");
+                         }
+                         font.pixelSize: clockRow.fontSize
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         width: Math.ceil(implicitWidth)
+                         horizontalAlignment: Text.AlignHCenter
+                         anchors.verticalCenter: parent.verticalCenter
+--- a/Modules/DankBar/Widgets/ColorPicker.qml
++++ b/Modules/DankBar/Widgets/ColorPicker.qml
+@@ -20,7 +20,7 @@
+                 anchors.centerIn: parent
+                 name: "palette"
+                 size: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: root.isActive ? Theme.primary : Theme.surfaceText
++                color: root.isActive ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root)
+             }
+         }
+     }
+--- a/Modules/DankBar/Widgets/ControlCenterButton.qml
++++ b/Modules/DankBar/Widgets/ControlCenterButton.qml
+@@ -134,10 +134,10 @@
+ 
+     function getNetworkIconColor() {
+         if (NetworkService.wifiToggling)
+-            return Theme.primary;
++            return Theme.barColor("primary", root);
+         if (NetworkService.isConnecting && !NetworkService.ethernetConnected)
+-            return Theme.primary;
+-        return NetworkService.networkStatus !== "disconnected" ? Theme.primary : Theme.surfaceText;
++            return Theme.barColor("primary", root);
++        return NetworkService.networkStatus !== "disconnected" ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+     }
+ 
+     function getIconBlinking(id) {
+@@ -158,16 +158,16 @@
+ 
+     function getMicIconColor() {
+         if (!AudioService.source?.audio)
+-            return Theme.surfaceText;
++            return Theme.barColor("surfaceText", root);
+         if (AudioService.source.audio.muted || AudioService.source.audio.volume === 0)
+-            return Theme.surfaceText;
+-        return Theme.widgetIconColor;
++            return Theme.barColor("surfaceText", root);
++        return Theme.barColor("widgetIconColor", root);
+     }
+ 
+     function getAudioIconColor() {
+         if (AudioService.sinkSilent)
+-            return Theme.widgetInactiveIconColor;
+-        return Theme.widgetIconColor;
++            return Theme.barColor("widgetInactiveIconColor", root);
++        return Theme.barColor("widgetIconColor", root);
+     }
+ 
+     function getBrightnessIconName() {
+@@ -280,12 +280,12 @@
+ 
+     function getBatteryIconColor() {
+         if (!BatteryService.batteryAvailable)
+-            return Theme.widgetIconColor;
++            return Theme.barColor("widgetIconColor", root);
+         if (BatteryService.isLowBattery && !BatteryService.isCharging)
+             return Theme.error;
+         if (BatteryService.isCharging || BatteryService.isPluggedIn)
+-            return Theme.primary;
+-        return Theme.widgetIconColor;
++            return Theme.barColor("primary", root);
++        return Theme.barColor("widgetIconColor", root);
+     }
+ 
+     function hasPrintJobs() {
+@@ -520,23 +520,23 @@
+                             color: {
+                                 switch (verticalGroupItem.modelData.id) {
+                                 case "screenSharing":
+-                                    return NiriService.hasActiveCast ? Theme.primary : Theme.surfaceText;
++                                    return NiriService.hasActiveCast ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "network":
+                                     return root.getNetworkIconColor();
+                                 case "vpn":
+-                                    return NetworkService.vpnConnected ? Theme.primary : Theme.surfaceText;
++                                    return NetworkService.vpnConnected ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "bluetooth":
+-                                    return (BluetoothService.connected || BluetoothService.connecting) ? Theme.primary : Theme.surfaceText;
++                                    return (BluetoothService.connected || BluetoothService.connecting) ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "battery":
+                                     return root.getBatteryIconColor();
+                                 case "printer":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 case "idleInhibitor":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 case "doNotDisturb":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 default:
+-                                    return Theme.widgetIconColor;
++                                    return Theme.barColor("widgetIconColor", root);
+                                 }
+                             }
+ 
+@@ -562,7 +562,7 @@
+                             text: Math.round((AudioService.sink?.audio?.volume ?? 0) * 100) + "%"
+                             reserveText: "100%"
+                             font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             anchors.horizontalCenter: parent.horizontalCenter
+                             anchors.top: audioIconV.bottom
+                             anchors.topMargin: 2
+@@ -584,7 +584,7 @@
+                             text: Math.round((AudioService.source?.audio?.volume ?? 0) * 100) + "%"
+                             reserveText: "100%"
+                             font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             anchors.horizontalCenter: parent.horizontalCenter
+                             anchors.top: micIconV.bottom
+                             anchors.topMargin: 2
+@@ -595,7 +595,7 @@
+                             visible: verticalGroupItem.modelData.id === "brightness"
+                             name: root.getBrightnessIconName()
+                             size: root.vIconSize
+-                            color: Theme.widgetIconColor
++                            color: Theme.barColor("widgetIconColor", root)
+                             anchors.horizontalCenter: parent.horizontalCenter
+                             anchors.top: parent.top
+                         }
+@@ -606,7 +606,7 @@
+                             text: Math.round(getBrightness() * 100) + "%"
+                             reserveText: "100%"
+                             font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             anchors.horizontalCenter: parent.horizontalCenter
+                             anchors.top: brightnessIconV.bottom
+                             anchors.topMargin: 2
+@@ -622,7 +622,7 @@
+                     DankIcon {
+                         name: "settings"
+                         size: root.vIconSize
+-                        color: root.isActive ? Theme.primary : Theme.widgetIconColor
++                        color: root.isActive ? Theme.barColor("primary", root) : Theme.barColor("widgetIconColor", root)
+                         anchors.centerIn: parent
+                     }
+                 }
+@@ -705,23 +705,23 @@
+                             color: {
+                                 switch (horizontalGroupItem.modelData.id) {
+                                 case "screenSharing":
+-                                    return NiriService.hasActiveCast ? Theme.primary : Theme.surfaceText;
++                                    return NiriService.hasActiveCast ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "network":
+                                     return root.getNetworkIconColor();
+                                 case "vpn":
+-                                    return NetworkService.vpnConnected ? Theme.primary : Theme.surfaceText;
++                                    return NetworkService.vpnConnected ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "bluetooth":
+-                                    return (BluetoothService.connected || BluetoothService.connecting) ? Theme.primary : Theme.surfaceText;
++                                    return (BluetoothService.connected || BluetoothService.connecting) ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                                 case "battery":
+                                     return root.getBatteryIconColor();
+                                 case "printer":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 case "idleInhibitor":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 case "doNotDisturb":
+-                                    return Theme.primary;
++                                    return Theme.barColor("primary", root);
+                                 default:
+-                                    return Theme.widgetIconColor;
++                                    return Theme.barColor("widgetIconColor", root);
+                                 }
+                             }
+ 
+@@ -761,7 +761,7 @@
+                                     text: Math.round((AudioService.sink?.audio?.volume ?? 0) * 100) + "%"
+                                     reserveText: "100%"
+                                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                                    color: Theme.widgetTextColor
++                                    color: Theme.barColor("widgetTextColor", root)
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     width: visible ? implicitWidth : 0
+                                 }
+@@ -798,7 +798,7 @@
+                                     text: Math.round((AudioService.source?.audio?.volume ?? 0) * 100) + "%"
+                                     reserveText: "100%"
+                                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                                    color: Theme.widgetTextColor
++                                    color: Theme.barColor("widgetTextColor", root)
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     width: visible ? implicitWidth : 0
+                                 }
+@@ -825,7 +825,7 @@
+                                     id: brightnessIcon
+                                     name: root.getBrightnessIconName()
+                                     size: root.getControlCenterIconSize()
+-                                    color: Theme.widgetIconColor
++                                    color: Theme.barColor("widgetIconColor", root)
+                                     anchors.verticalCenter: parent.verticalCenter
+                                 }
+ 
+@@ -835,7 +835,7 @@
+                                     text: Math.round(getBrightness() * 100) + "%"
+                                     reserveText: "100%"
+                                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                                    color: Theme.widgetTextColor
++                                    color: Theme.barColor("widgetTextColor", root)
+                                     anchors.verticalCenter: parent.verticalCenter
+                                     width: visible ? implicitWidth : 0
+                                 }
+@@ -847,7 +847,7 @@
+                 DankIcon {
+                     name: "settings"
+                     size: root.getControlCenterIconSize()
+-                    color: root.isActive ? Theme.primary : Theme.widgetIconColor
++                    color: root.isActive ? Theme.barColor("primary", root) : Theme.barColor("widgetIconColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                     visible: root.hasNoVisibleIcons()
+                 }
+--- a/Modules/DankBar/Widgets/CpuMonitor.qml
++++ b/Modules/DankBar/Widgets/CpuMonitor.qml
+@@ -46,7 +46,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -61,7 +61,7 @@
+                         return DgopService.cpuUsage.toFixed(0);
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -85,7 +85,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -103,7 +103,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/CpuTemperature.qml
++++ b/Modules/DankBar/Widgets/CpuTemperature.qml
+@@ -46,7 +46,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -61,7 +61,7 @@
+                         return Math.round(DgopService.cpuTemperature).toString();
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -85,7 +85,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -103,7 +103,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/DWLLayout.qml
++++ b/Modules/DankBar/Widgets/DWLLayout.qml
+@@ -60,14 +60,14 @@
+                 DankIcon {
+                     name: layout.getLayoutIcon(layout.currentLayoutSymbol)
+                     size: Theme.barIconSize(layout.barThickness, undefined, layout.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", layout)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+ 
+                 StyledText {
+                     text: layout.currentLayoutSymbol
+                     font.pixelSize: Theme.barTextSize(layout.barThickness, layout.barConfig?.fontScale, layout.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", layout)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -81,14 +81,14 @@
+                 DankIcon {
+                     name: layout.getLayoutIcon(layout.currentLayoutSymbol)
+                     size: Theme.barIconSize(layout.barThickness, -4, layout.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", layout)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+ 
+                 StyledText {
+                     text: layout.currentLayoutSymbol
+                     font.pixelSize: Theme.barTextSize(layout.barThickness, layout.barConfig?.fontScale, layout.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", layout)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/DiskUsage.qml
++++ b/Modules/DankBar/Widgets/DiskUsage.qml
+@@ -125,7 +125,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -149,7 +149,7 @@
+                         }
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -173,7 +173,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -188,7 +188,7 @@
+                         return root.selectedMount.mount;
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                     horizontalAlignment: Text.AlignLeft
+                     verticalAlignment: Text.AlignVCenter
+@@ -248,7 +248,7 @@
+                             }
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+ 
+                         anchors.fill: parent
+                         horizontalAlignment: Text.AlignHCenter
+--- a/Modules/DankBar/Widgets/FocusedApp.qml
++++ b/Modules/DankBar/Widgets/FocusedApp.qml
+@@ -13,6 +13,7 @@
+     id: root
+ 
+     property var widgetData: null
++    readonly property bool appNameOnly: widgetData?.focusedWindowAppNameOnly === true
+     property bool compactMode: widgetData?.focusedWindowCompactMode !== undefined ? widgetData.focusedWindowCompactMode : SettingsData.focusedWindowCompactMode
+     property bool showIcon: widgetData?.focusedWindowShowIcon !== undefined ? widgetData.focusedWindowShowIcon : SettingsData.focusedWindowShowIcon
+     readonly property int maxWidth: {
+@@ -295,7 +296,7 @@
+                 layer.effect: MultiEffect {
+                     saturation: 0
+                     colorization: 1
+-                    colorizationColor: Theme.primary
++                    colorizationColor: Theme.barColor("primary", root)
+                 }
+             }
+ 
+@@ -303,7 +304,7 @@
+                 anchors.centerIn: parent
+                 size: 18
+                 name: "sports_esports"
+-                color: Theme.widgetTextColor
++                color: Theme.barColor("widgetTextColor", root)
+                 visible: root.isVerticalOrientation && activeWindow && activeWindow.appId && appIcon.status !== Image.Ready && Paths.isSteamApp(activeWindow.appId)
+             }
+ 
+@@ -317,7 +318,7 @@
+                     return appName.charAt(0).toUpperCase();
+                 }
+                 font.pixelSize: 10
+-                color: Theme.widgetTextColor
++                color: Theme.barColor("widgetTextColor", root)
+             }
+ 
+             Item {
+@@ -355,7 +356,7 @@
+                         layer.effect: MultiEffect {
+                             saturation: 0
+                             colorization: 1
+-                            colorizationColor: Theme.primary
++                            colorizationColor: Theme.barColor("primary", root)
+                         }
+                     }
+ 
+@@ -365,19 +366,19 @@
+                         size: contentRow.iconSize
+                         anchors.verticalCenter: parent.verticalCenter
+                         name: "sports_esports"
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         visible: root.showIcon && activeWindow && activeWindow.appId && horizontalAppIcon.status !== Image.Ready && Paths.isSteamApp(activeWindow.appId)
+                     }
+ 
+                     StyledText {
+                         id: appText
+                         text: {
+-                            if (compactMode || !activeWindow || !activeWindow.appId)
++                            if ((compactMode && !root.appNameOnly) || !activeWindow || !activeWindow.appId)
+                                 return "";
+                             return Paths.getAppName(activeWindow.appId, activeDesktopEntry);
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         anchors.verticalCenter: parent.verticalCenter
+                         wrapMode: Text.NoWrap
+                         elide: Text.ElideRight
+@@ -401,12 +402,14 @@
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                         color: Theme.outlineButton
+                         anchors.verticalCenter: parent.verticalCenter
+-                        visible: !compactMode && appText.text && titleText.text
++                        visible: !root.appNameOnly && !compactMode && appText.text && titleText.text
+                     }
+ 
+                     StyledText {
+                         id: titleText
+                         text: {
++                            if (root.appNameOnly)
++                                return "";
+                             const title = activeWindow && activeWindow.title ? activeWindow.title : "";
+                             const appName = appText.text;
+ 
+@@ -427,7 +430,7 @@
+                             return title;
+                         }
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         anchors.verticalCenter: parent.verticalCenter
+                         wrapMode: Text.NoWrap
+                         elide: Text.ElideRight
+--- a/Modules/DankBar/Widgets/GpuTemperature.qml
++++ b/Modules/DankBar/Widgets/GpuTemperature.qml
+@@ -114,7 +114,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -129,7 +129,7 @@
+                         return Math.round(root.displayTemp).toString();
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -153,7 +153,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -171,7 +171,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/IdleInhibitor.qml
++++ b/Modules/DankBar/Widgets/IdleInhibitor.qml
+@@ -7,8 +7,8 @@
+ BasePill {
+     id: root
+ 
+-    property color idleColor: Theme.widgetTextColor
+-    property color inhibitColor: Theme.primary
++    property color idleColor: Theme.barColor("widgetTextColor", root)
++    property color inhibitColor: Theme.barColor("primary", root)
+ 
+     content: Component {
+         Item {
+--- a/Modules/DankBar/Widgets/KeyboardLayoutName.qml
++++ b/Modules/DankBar/Widgets/KeyboardLayoutName.qml
+@@ -75,7 +75,7 @@
+                 DankIcon {
+                     name: "keyboard"
+                     size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                     visible: root.showIcon
+                 }
+@@ -87,7 +87,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -101,7 +101,7 @@
+                 DankIcon {
+                     name: "keyboard"
+                     size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                     visible: root.showIcon
+                 }
+@@ -113,7 +113,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/LauncherButton.qml
++++ b/Modules/DankBar/Widgets/LauncherButton.qml
+@@ -20,7 +20,7 @@
+                 mode: SettingsData.launcherLogoMode
+                 size: Theme.barIconSize(root.barThickness, SettingsData.launcherLogoSizeOffset, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+                 appsIconSize: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                appsIconColor: Theme.widgetIconColor
++                appsIconColor: Theme.barColor("widgetIconColor", root)
+                 colorOverride: Theme.effectiveLogoColor
+                 brightness: SettingsData.launcherLogoBrightness
+                 contrast: SettingsData.launcherLogoContrast
+--- a/Modules/DankBar/Widgets/Media.qml
++++ b/Modules/DankBar/Widgets/Media.qml
+@@ -187,7 +187,7 @@
+                         anchors.fill: parent
+                         name: "music_note"
+                         size: 20
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         visible: !CavaService.cavaAvailable || !SettingsData.audioVisualizerEnabled
+                     }
+ 
+@@ -215,7 +215,7 @@
+                     height: 24
+                     radius: 12
+                     anchors.horizontalCenter: parent.horizontalCenter
+-                    color: root._isPlaying ? Theme.primary : Theme.primaryHover
++                    color: root._isPlaying ? Theme.barColor("primary", root) : Theme.withAlpha(Theme.barColor("primary", root), 0.12)
+                     visible: root.playerAvailable
+                     opacity: activePlayer ? 1 : 0.3
+ 
+@@ -223,7 +223,7 @@
+                         anchors.centerIn: parent
+                         name: root._isPlaying ? "pause" : "play_arrow"
+                         size: 14
+-                        color: root._isPlaying ? Theme.background : Theme.primary
++                        color: root._isPlaying ? Theme.barColor("background", root) : Theme.barColor("primary", root)
+                     }
+ 
+                     MouseArea {
+@@ -271,7 +271,7 @@
+                             anchors.fill: parent
+                             name: "music_note"
+                             size: 20
+-                            color: Theme.primary
++                            color: Theme.barColor("primary", root)
+                             visible: !CavaService.cavaAvailable || !SettingsData.audioVisualizerEnabled
+                         }
+                     }
+@@ -309,9 +309,10 @@
+                             id: mediaText
+                             anchors.fill: parent
+                             text: textContainer.displayText
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+                             active: root._isPlaying
++                            smoothScroll: true
+                             animateTextChange: true
+                         }
+ 
+@@ -343,7 +344,7 @@
+                         height: 20
+                         radius: 10
+                         anchors.verticalCenter: parent.verticalCenter
+-                        color: prevArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                        color: prevArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+                         visible: root.playerAvailable
+                         opacity: (activePlayer && activePlayer.canGoPrevious) ? 1 : 0.3
+ 
+@@ -351,7 +352,7 @@
+                             anchors.centerIn: parent
+                             name: "skip_previous"
+                             size: 12
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                         }
+ 
+                         MouseArea {
+@@ -363,20 +364,26 @@
+                         }
+                     }
+ 
+-                    Rectangle {
++                    Item {
+                         width: 24
+                         height: 24
+-                        radius: 12
+                         anchors.verticalCenter: parent.verticalCenter
+-                        color: root._isPlaying ? Theme.primary : Theme.primaryHover
+                         visible: root.playerAvailable
+                         opacity: activePlayer ? 1 : 0.3
++
++                        Rectangle {
++                            anchors.centerIn: parent
++                            width: 20
++                            height: 20
++                            radius: 10
++                            color: root._isPlaying ? Theme.barColor("primary", root) : Theme.withAlpha(Theme.barColor("primary", root), 0.12)
++                        }
+ 
+                         DankIcon {
+                             anchors.centerIn: parent
+                             name: root._isPlaying ? "pause" : "play_arrow"
+                             size: 14
+-                            color: root._isPlaying ? Theme.background : Theme.primary
++                            color: root._isPlaying ? Theme.barColor("background", root) : Theme.barColor("primary", root)
+                         }
+ 
+                         MouseArea {
+@@ -396,7 +403,7 @@
+                         height: 20
+                         radius: 10
+                         anchors.verticalCenter: parent.verticalCenter
+-                        color: nextArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                        color: nextArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+                         visible: playerAvailable
+                         opacity: (activePlayer && activePlayer.canGoNext) ? 1 : 0.3
+ 
+@@ -404,7 +411,7 @@
+                             anchors.centerIn: parent
+                             name: "skip_next"
+                             size: 12
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                         }
+ 
+                         MouseArea {
+--- a/Modules/DankBar/Widgets/NetworkMonitor.qml
++++ b/Modules/DankBar/Widgets/NetworkMonitor.qml
+@@ -29,7 +29,7 @@
+                 DankIcon {
+                     name: "network_check"
+                     size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+ 
+@@ -71,7 +71,7 @@
+                 DankIcon {
+                     name: "network_check"
+                     size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+ 
+@@ -88,7 +88,7 @@
+                     StyledText {
+                         text: DgopService.networkRxRate > 0 ? Format.formatRate(DgopService.networkRxRate, 1) : "0 B/s"
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         anchors.verticalCenter: parent.verticalCenter
+                         horizontalAlignment: Text.AlignLeft
+                         elide: Text.ElideNone
+@@ -117,7 +117,7 @@
+                     StyledText {
+                         text: DgopService.networkTxRate > 0 ? Format.formatRate(DgopService.networkTxRate, 1) : "0 B/s"
+                         font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                         anchors.verticalCenter: parent.verticalCenter
+                         horizontalAlignment: Text.AlignLeft
+                         elide: Text.ElideNone
+--- a/Modules/DankBar/Widgets/NotepadButton.qml
++++ b/Modules/DankBar/Widgets/NotepadButton.qml
+@@ -137,7 +137,7 @@
+                 anchors.centerIn: parent
+                 name: "assignment"
+                 size: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: root.isActive ? Theme.primary : Theme.surfaceText
++                color: root.isActive ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root)
+             }
+         }
+     }
+--- a/Modules/DankBar/Widgets/NotificationCenterButton.qml
++++ b/Modules/DankBar/Widgets/NotificationCenterButton.qml
+@@ -20,7 +20,7 @@
+                 anchors.centerIn: parent
+                 name: SessionData.doNotDisturb ? "notifications_off" : "notifications"
+                 size: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: SessionData.doNotDisturb ? Theme.primary : (root.isActive ? Theme.primary : Theme.widgetIconColor)
++                color: SessionData.doNotDisturb ? Theme.barColor("primary", root) : (root.isActive ? Theme.barColor("primary", root) : Theme.barColor("widgetIconColor", root))
+             }
+ 
+             Rectangle {
+--- a/Modules/DankBar/Widgets/PowerMenuButton.qml
++++ b/Modules/DankBar/Widgets/PowerMenuButton.qml
+@@ -18,7 +18,7 @@
+                 anchors.centerIn: parent
+                 name: "power_settings_new"
+                 size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: Theme.widgetIconColor
++                color: Theme.barColor("widgetIconColor", root)
+             }
+         }
+     }
+--- a/Modules/DankBar/Widgets/PrivacyIndicator.qml
++++ b/Modules/DankBar/Widgets/PrivacyIndicator.qml
+@@ -81,7 +81,7 @@
+                             return "mic";
+                         }
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.microphoneActive ? Theme.error : Theme.surfaceText
++                        color: PrivacyService.microphoneActive ? Theme.error : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.microphoneActive
+                         anchors.centerIn: parent
+                     }
+@@ -96,7 +96,7 @@
+                     DankIcon {
+                         name: "camera_video"
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.cameraActive ? Theme.error : Theme.surfaceText
++                        color: PrivacyService.cameraActive ? Theme.error : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.cameraActive
+                         anchors.centerIn: parent
+                     }
+@@ -123,7 +123,7 @@
+                     DankIcon {
+                         name: "screen_share"
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.screensharingActive ? Theme.warning : Theme.surfaceText
++                        color: PrivacyService.screensharingActive ? Theme.warning : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.screensharingActive
+                         anchors.centerIn: parent
+                     }
+@@ -150,7 +150,7 @@
+                             return "mic";
+                         }
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.microphoneActive ? Theme.error : Theme.surfaceText
++                        color: PrivacyService.microphoneActive ? Theme.error : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.microphoneActive
+                         anchors.centerIn: parent
+                     }
+@@ -165,7 +165,7 @@
+                     DankIcon {
+                         name: "camera_video"
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.cameraActive ? Theme.error : Theme.surfaceText
++                        color: PrivacyService.cameraActive ? Theme.error : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.cameraActive
+                         anchors.centerIn: parent
+                     }
+@@ -192,7 +192,7 @@
+                     DankIcon {
+                         name: "screen_share"
+                         size: Theme.iconSizeSmall
+-                        color: PrivacyService.screensharingActive ? Theme.warning : Theme.surfaceText
++                        color: PrivacyService.screensharingActive ? Theme.warning : Theme.barColor("surfaceText", root)
+                         filled: PrivacyService.screensharingActive
+                         anchors.centerIn: parent
+                     }
+@@ -206,7 +206,7 @@
+         width: tooltipText.contentWidth + Theme.spacingM * 2
+         height: tooltipText.contentHeight + Theme.spacingS * 2
+         radius: Theme.cornerRadius
+-        color: Theme.withAlpha(Theme.surfaceContainer, Theme.popupTransparency)
++        color: Theme.withAlpha(Theme.barColor("surfaceContainer", root), Theme.popupTransparency)
+         border.color: Theme.outlineMedium
+         border.width: 1
+         visible: false
+@@ -220,7 +220,7 @@
+             anchors.centerIn: parent
+             text: PrivacyService.getPrivacySummary()
+             font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+-            color: Theme.widgetTextColor
++            color: Theme.barColor("widgetTextColor", root)
+         }
+ 
+         Rectangle {
+--- a/Modules/DankBar/Widgets/RamMonitor.qml
++++ b/Modules/DankBar/Widgets/RamMonitor.qml
+@@ -49,7 +49,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+@@ -68,7 +68,7 @@
+                         return DgopService.memoryUsage.toFixed(0);
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+ 
+@@ -77,7 +77,7 @@
+                     visible: root.showSwap && DgopService.totalSwapKB > 0
+                     text: root.swapUsage.toFixed(0)
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.surfaceVariantText
++                    color: Theme.barColor("surfaceVariantText", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -101,7 +101,7 @@
+                             return Theme.tempWarning;
+                         }
+ 
+-                        return Theme.widgetIconColor;
++                        return Theme.barColor("widgetIconColor", root);
+                     }
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+@@ -138,7 +138,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/RunningApps.qml
++++ b/Modules/DankBar/Widgets/RunningApps.qml
+@@ -289,9 +289,9 @@
+                         radius: Theme.cornerRadius
+                         color: {
+                             if (isFocused) {
+-                                return mouseArea.containsMouse ? Theme.primarySelected : Theme.withAlpha(Theme.primary, 0.45);
+-                            }
+-                            return mouseArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0);
++                                return mouseArea.containsMouse ? Theme.primarySelected : Theme.withAlpha(Theme.barColor("primary", root), 0.45);
++                            }
++                            return mouseArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0);
+                         }
+ 
+                         // App icon
+@@ -321,7 +321,7 @@
+                             layer.effect: MultiEffect {
+                                 saturation: 0
+                                 colorization: 1
+-                                colorizationColor: Theme.primary
++                                colorizationColor: Theme.barColor("primary", root)
+                             }
+                         }
+ 
+@@ -331,7 +331,7 @@
+                             anchors.verticalCenter: parent.verticalCenter
+                             size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+                             name: "sports_esports"
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             visible: !iconImg.visible && Paths.isSteamApp(effectiveAppId)
+                             opacity: delegateItem.isMinimized ? 0.4 : 1
+                         }
+@@ -349,7 +349,7 @@
+                                 return appName.charAt(0).toUpperCase();
+                             }
+                             font.pixelSize: 10
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             opacity: delegateItem.isMinimized ? 0.4 : 1
+                         }
+ 
+@@ -361,7 +361,7 @@
+                             width: 14
+                             height: 14
+                             radius: 7
+-                            color: Theme.primary
++                            color: Theme.barColor("primary", root)
+                             visible: isGrouped && windowCount > 1
+                             z: 10
+ 
+@@ -369,7 +369,7 @@
+                                 anchors.centerIn: parent
+                                 text: windowCount > 9 ? "9+" : windowCount
+                                 font.pixelSize: 9
+-                                color: Theme.surface
++                                color: Theme.barColor("surface", root)
+                             }
+                         }
+ 
+@@ -382,7 +382,7 @@
+                             visible: !(widgetData?.runningAppsCompactMode !== undefined ? widgetData.runningAppsCompactMode : SettingsData.runningAppsCompactMode)
+                             text: windowTitle
+                             font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             elide: Text.ElideRight
+                             maximumLineCount: 1
+                         }
+@@ -547,9 +547,9 @@
+                         radius: Theme.cornerRadius
+                         color: {
+                             if (isFocused) {
+-                                return mouseArea.containsMouse ? Theme.primarySelected : Theme.withAlpha(Theme.primary, 0.45);
+-                            }
+-                            return mouseArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0);
++                                return mouseArea.containsMouse ? Theme.primarySelected : Theme.withAlpha(Theme.barColor("primary", root), 0.45);
++                            }
++                            return mouseArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0);
+                         }
+ 
+                         IconImage {
+@@ -578,7 +578,7 @@
+                             layer.effect: MultiEffect {
+                                 saturation: 0
+                                 colorization: 1
+-                                colorizationColor: Theme.primary
++                                colorizationColor: Theme.barColor("primary", root)
+                             }
+                         }
+ 
+@@ -588,7 +588,7 @@
+                             anchors.verticalCenter: parent.verticalCenter
+                             size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+                             name: "sports_esports"
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             visible: !iconImg.visible && Paths.isSteamApp(effectiveAppId)
+                             opacity: delegateItem.isMinimized ? 0.4 : 1
+                         }
+@@ -606,7 +606,7 @@
+                                 return appName.charAt(0).toUpperCase();
+                             }
+                             font.pixelSize: 10
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             opacity: delegateItem.isMinimized ? 0.4 : 1
+                         }
+ 
+@@ -618,7 +618,7 @@
+                             width: 14
+                             height: 14
+                             radius: 7
+-                            color: Theme.primary
++                            color: Theme.barColor("primary", root)
+                             visible: isGrouped && windowCount > 1
+                             z: 10
+ 
+@@ -626,7 +626,7 @@
+                                 anchors.centerIn: parent
+                                 text: windowCount > 9 ? "9+" : windowCount
+                                 font.pixelSize: 9
+-                                color: Theme.surface
++                                color: Theme.barColor("surface", root)
+                             }
+                         }
+ 
+@@ -639,7 +639,7 @@
+                             visible: !(widgetData?.runningAppsCompactMode !== undefined ? widgetData.runningAppsCompactMode : SettingsData.runningAppsCompactMode)
+                             text: windowTitle
+                             font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                             elide: Text.ElideRight
+                             maximumLineCount: 1
+                         }
+--- a/Modules/DankBar/Widgets/SystemTrayBar.qml
++++ b/Modules/DankBar/Widgets/SystemTrayBar.qml
+@@ -49,7 +49,14 @@
+         return `${id}::${tooltipTitle}`;
+     }
+ 
++    // Ente supplies a white mask rather than a theme-aware tray icon.
++    function adaptEnteIcon(trayItem) {
++        return (barConfig?.noBackground ?? false) && Theme.currentTheme === Theme.dynamic && (trayItem?.id || "").startsWith("ente_status_icon");
++    }
++
+     function trayIconSourceFor(trayItem) {
++        if ((trayItem?.id || "") === "spotify-client")
++            return Qt.resolvedUrl("../../../Assets/tray/spotify.svg").toString();
+         let icon = trayItem && trayItem.icon;
+         if (typeof icon === 'string' || icon instanceof String) {
+             if (icon === "")
+@@ -238,11 +245,11 @@
+     readonly property color trayIconTintColor: {
+         switch (trayIconTintMode) {
+         case "primary":
+-            return Theme.primary;
++            return Theme.barColor("primary", root);
+         case "secondary":
+-            return Theme.secondary;
++            return Theme.barColor("secondary", root);
+         default:
+-            return Theme.surfaceText;
++            return Theme.barColor("surfaceText", root);
+         }
+     }
+ 
+@@ -524,9 +531,9 @@
+                         height: root.trayItemSize
+                         anchors.centerIn: parent
+                         radius: Theme.cornerRadius
+-                        color: trayItemArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                        color: trayItemArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+                         border.width: dragHandler.dragging ? 2 : 0
+-                        border.color: Theme.primary
++                        border.color: Theme.barColor("primary", root)
+                         opacity: dragHandler.dragging ? 0.8 : 1.0
+ 
+                         transform: Translate {
+@@ -543,11 +550,12 @@
+                             smooth: true
+                             mipmap: true
+                             visible: status === Image.Ready
+-                            layer.enabled: root.trayIconTintEnabled
++                            layer.enabled: root.trayIconTintEnabled || root.adaptEnteIcon(trayItem)
+                             layer.effect: MultiEffect {
+-                                saturation: root.trayIconSaturation
+-                                colorization: root.trayIconColorization
+-                                colorizationColor: root.trayIconTintColor
++                                brightness: root.adaptEnteIcon(trayItem) && Theme.barIsLight(root) ? -0.85 : 0
++                                saturation: root.adaptEnteIcon(trayItem) ? -1 : root.trayIconSaturation
++                                colorization: root.adaptEnteIcon(trayItem) ? 1 : root.trayIconColorization
++                                colorizationColor: root.adaptEnteIcon(trayItem) ? Theme.barColor("surfaceText", root) : root.trayIconTintColor
+                             }
+                         }
+ 
+@@ -561,7 +569,7 @@
+                                 return itemId.charAt(0).toUpperCase();
+                             }
+                             font.pixelSize: 10
+-                            color: Theme.widgetTextColor
++                            color: Theme.barColor("widgetTextColor", root)
+                         }
+ 
+                         DankRipple {
+@@ -660,13 +668,13 @@
+                     height: root.trayItemSize
+                     anchors.centerIn: parent
+                     radius: Theme.cornerRadius
+-                    color: caretArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                    color: caretArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+ 
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: root.toggleIconName()
+                         size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                     }
+ 
+                     DankRipple {
+@@ -733,7 +741,7 @@
+                 x: root.isVerticalOrientation ? Math.round((parent.width - width) / 2) : (root.reverseInlineHorizontal ? parent.width - width : 0)
+                 y: root.isVerticalOrientation ? (root.reverseInlineVertical ? parent.height - height : 0) : Math.round((parent.height - height) / 2)
+                 radius: Theme.cornerRadius
+-                color: inlineTrayItemArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                color: inlineTrayItemArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+                 opacity: root.inlineExpanded ? 1 : 0
+ 
+                 Behavior on opacity {
+@@ -753,11 +761,12 @@
+                     smooth: true
+                     mipmap: true
+                     visible: status === Image.Ready
+-                    layer.enabled: root.trayIconTintEnabled
++                    layer.enabled: root.trayIconTintEnabled || root.adaptEnteIcon(trayItem)
+                     layer.effect: MultiEffect {
+-                        saturation: root.trayIconSaturation
+-                        colorization: root.trayIconColorization
+-                        colorizationColor: root.trayIconTintColor
++                        brightness: root.adaptEnteIcon(trayItem) && Theme.barIsLight(root) ? -0.85 : 0
++                                saturation: root.adaptEnteIcon(trayItem) ? -1 : root.trayIconSaturation
++                        colorization: root.adaptEnteIcon(trayItem) ? 1 : root.trayIconColorization
++                        colorizationColor: root.adaptEnteIcon(trayItem) ? Theme.barColor("surfaceText", root) : root.trayIconTintColor
+                     }
+                 }
+ 
+@@ -771,7 +780,7 @@
+                         return itemId.charAt(0).toUpperCase();
+                     }
+                     font.pixelSize: 10
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                 }
+ 
+                 DankRipple {
+@@ -856,9 +865,9 @@
+                 height: root.trayItemSize
+                 anchors.centerIn: parent
+                 radius: Theme.cornerRadius
+-                color: trayItemArea.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                color: trayItemArea.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+                 border.width: dragHandler.dragging ? 2 : 0
+-                border.color: Theme.primary
++                border.color: Theme.barColor("primary", root)
+                 opacity: dragHandler.dragging ? 0.8 : 1.0
+ 
+                 transform: Translate {
+@@ -875,11 +884,12 @@
+                     smooth: true
+                     mipmap: true
+                     visible: status === Image.Ready
+-                    layer.enabled: root.trayIconTintEnabled
++                    layer.enabled: root.trayIconTintEnabled || root.adaptEnteIcon(trayItem)
+                     layer.effect: MultiEffect {
+-                        saturation: root.trayIconSaturation
+-                        colorization: root.trayIconColorization
+-                        colorizationColor: root.trayIconTintColor
++                        brightness: root.adaptEnteIcon(trayItem) && Theme.barIsLight(root) ? -0.85 : 0
++                                saturation: root.adaptEnteIcon(trayItem) ? -1 : root.trayIconSaturation
++                        colorization: root.adaptEnteIcon(trayItem) ? 1 : root.trayIconColorization
++                        colorizationColor: root.adaptEnteIcon(trayItem) ? Theme.barColor("surfaceText", root) : root.trayIconTintColor
+                     }
+                 }
+ 
+@@ -893,7 +903,7 @@
+                         return itemId.charAt(0).toUpperCase();
+                     }
+                     font.pixelSize: 10
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                 }
+ 
+                 DankRipple {
+@@ -1009,13 +1019,13 @@
+                     height: root.trayItemSize
+                     anchors.centerIn: parent
+                     radius: Theme.cornerRadius
+-                    color: caretAreaVert.containsMouse ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.withAlpha(BlurService.hoverColor(Theme.widgetBaseHoverColor), 0)
++                    color: caretAreaVert.containsMouse ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.withAlpha(BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)), 0)
+ 
+                     DankIcon {
+                         anchors.centerIn: parent
+                         name: root.toggleIconName()
+                         size: Theme.barIconSize(root.barThickness, undefined, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                        color: Theme.widgetTextColor
++                        color: Theme.barColor("widgetTextColor", root)
+                     }
+ 
+                     DankRipple {
+--- a/Modules/DankBar/Widgets/SystemUpdate.qml
++++ b/Modules/DankBar/Widgets/SystemUpdate.qml
+@@ -70,8 +70,8 @@
+                     if (SystemUpdateService.hasError)
+                         return Theme.error;
+                     if (root.hasUpdates)
+-                        return Theme.primary;
+-                    return root.isActive ? Theme.primary : Theme.surfaceText;
++                        return Theme.barColor("primary", root);
++                    return root.isActive ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                 }
+ 
+                 RotationAnimator on rotation {
+@@ -125,8 +125,8 @@
+                         if (SystemUpdateService.hasError)
+                             return Theme.error;
+                         if (root.hasUpdates)
+-                            return Theme.primary;
+-                        return root.isActive ? Theme.primary : Theme.surfaceText;
++                            return Theme.barColor("primary", root);
++                        return root.isActive ? Theme.barColor("primary", root) : Theme.barColor("surfaceText", root);
+                     }
+ 
+                     RotationAnimator on rotation {
+@@ -149,7 +149,7 @@
+                     anchors.verticalCenter: parent.verticalCenter
+                     text: SystemUpdateService.updateCount.toString()
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     visible: root.hasUpdates && !root.isChecking
+                 }
+             }
+--- a/Modules/DankBar/Widgets/Vpn.qml
++++ b/Modules/DankBar/Widgets/Vpn.qml
+@@ -42,7 +42,7 @@
+ 
+                 name: DMSNetworkService.connected ? "vpn_lock" : "vpn_key_off"
+                 size: Theme.barIconSize(root.barThickness, -4, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                color: DMSNetworkService.connected ? Theme.primary : Theme.widgetIconColor
++                color: DMSNetworkService.connected ? Theme.barColor("primary", root) : Theme.barColor("widgetIconColor", root)
+                 opacity: DMSNetworkService.isBusy ? 0.5 : 1.0
+                 anchors.centerIn: parent
+ 
+--- a/Modules/DankBar/Widgets/Weather.qml
++++ b/Modules/DankBar/Widgets/Weather.qml
+@@ -32,7 +32,7 @@
+                 DankIcon {
+                     name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
+                     size: Theme.barIconSize(root.barThickness, -6, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetIconColor
++                    color: Theme.barColor("widgetIconColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+ 
+@@ -45,7 +45,7 @@
+                         return temp;
+                     }
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.horizontalCenter: parent.horizontalCenter
+                 }
+             }
+@@ -59,7 +59,7 @@
+                 DankIcon {
+                     name: WeatherService.getWeatherIcon(WeatherService.weather.wCode)
+                     size: Theme.barIconSize(root.barThickness, -6, root.barConfig?.maximizeWidgetIcons, root.barConfig?.iconScale)
+-                    color: Theme.widgetIconColor
++                    color: Theme.barColor("widgetIconColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+ 
+@@ -70,7 +70,7 @@
+                     width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                     horizontalAlignment: Text.AlignHCenter
+                     font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+-                    color: Theme.widgetTextColor
++                    color: Theme.barColor("widgetTextColor", root)
+                     anchors.verticalCenter: parent.verticalCenter
+                 }
+             }
+--- a/Modules/DankBar/Widgets/WorkspaceSwitcher.qml
++++ b/Modules/DankBar/Widgets/WorkspaceSwitcher.qml
+@@ -913,13 +913,13 @@
+                 const opacity = barConfig?.widgetOutlineOpacity ?? 1.0;
+                 switch (colorOption) {
+                 case "surfaceText":
+-                    return Theme.withAlpha(Theme.surfaceText, opacity);
++                    return Theme.withAlpha(Theme.barColor("surfaceText", root), opacity);
+                 case "secondary":
+-                    return Theme.withAlpha(Theme.secondary, opacity);
++                    return Theme.withAlpha(Theme.barColor("secondary", root), opacity);
+                 case "primary":
+-                    return Theme.withAlpha(Theme.primary, opacity);
++                    return Theme.withAlpha(Theme.barColor("primary", root), opacity);
+                 default:
+-                    return Theme.withAlpha(Theme.primary, opacity);
++                    return Theme.withAlpha(Theme.barColor("primary", root), opacity);
+                 }
+             }
+         }
+@@ -1053,7 +1053,7 @@
+                 width: root.isVertical ? Math.max(root.widgetHeight * 0.7, overviewContent.implicitWidth + Theme.spacingS) : (overviewContent.implicitWidth + Theme.spacingS * 2)
+                 height: Math.max(root.widgetHeight * 0.5, overviewContent.implicitHeight + Theme.spacingXS)
+                 radius: Theme.cornerRadius
+-                color: Theme.withAlpha(Theme.primary, 0.18)
++                color: Theme.withAlpha(Theme.barColor("primary", root), 0.18)
+ 
+                 Row {
+                     id: overviewContent
+@@ -1064,14 +1064,14 @@
+                         anchors.verticalCenter: parent.verticalCenter
+                         name: "grid_view"
+                         size: overviewPill.labelSize + 2
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                     }
+ 
+                     StyledText {
+                         anchors.verticalCenter: parent.verticalCenter
+                         visible: !root.isVertical
+                         text: I18n.tr("Overview")
+-                        color: Theme.primary
++                        color: Theme.barColor("primary", root)
+                         font.pixelSize: overviewPill.labelSize
+                         font.weight: Font.DemiBold
+                     }
+@@ -1318,29 +1318,29 @@
+                     switch (mode) {
+                     case "primary":
+                     case "pri":
+-                        return Theme.primary;
++                        return Theme.barColor("primary", root);
+                     case "primaryContainer":
+-                        return Theme.primaryContainer;
++                        return Theme.barColor("primaryContainer", root);
+                     case "secondary":
+                     case "sec":
+-                        return Theme.secondary;
++                        return Theme.barColor("secondary", root);
+                     case "secondaryContainer":
+-                        return Theme.secondaryContainer;
++                        return Theme.barColor("secondaryContainer", root);
+                     case "tertiary":
+                     case "ter":
+-                        return Theme.tertiary;
++                        return Theme.barColor("tertiary", root);
+                     case "tertiaryContainer":
+-                        return Theme.tertiaryContainer;
++                        return Theme.barColor("tertiaryContainer", root);
+                     case "surfaceText":
+-                        return Theme.surfaceText;
++                        return Theme.barColor("surfaceText", root);
+                     case "s":
+-                        return Theme.surface;
++                        return Theme.barColor("surface", root);
+                     case "sc":
+-                        return Theme.surfaceContainer;
++                        return Theme.barColor("surfaceContainer", root);
+                     case "sch":
+-                        return Theme.surfaceContainerHigh;
++                        return Theme.barColor("surfaceContainerHigh", root);
+                     case "schh":
+-                        return Theme.surfaceContainerHighest;
++                        return Theme.barColor("surfaceContainerHighest", root);
+                     case "error":
+                     case "err":
+                         return Theme.error;
+@@ -1359,25 +1359,25 @@
+                     return root.useUnfocusedAppearance ? unfocusedCustom : focusedCustom;
+                 }
+ 
+-                readonly property color unfocusedColor: colorFromMode(effectiveColorMode(SettingsData.workspaceUnfocusedColorMode, SettingsData.workspaceUnfocusedMonitorUnfocusedColorMode), Theme.surfaceTextAlpha, effectiveCustomColor(SettingsData.workspaceUnfocusedCustomColor, SettingsData.workspaceUnfocusedMonitorUnfocusedCustomColor), Theme.surfaceTextAlpha)
++                readonly property color unfocusedColor: colorFromMode(effectiveColorMode(SettingsData.workspaceUnfocusedColorMode, SettingsData.workspaceUnfocusedMonitorUnfocusedColorMode), Theme.barColor("surfaceTextAlpha", root), effectiveCustomColor(SettingsData.workspaceUnfocusedCustomColor, SettingsData.workspaceUnfocusedMonitorUnfocusedCustomColor), Theme.barColor("surfaceTextAlpha", root))
+ 
+                 readonly property color activeColor: {
+                     const mode = effectiveColorMode(SettingsData.workspaceColorMode, SettingsData.workspaceUnfocusedMonitorColorMode);
+                     if (mode === "none")
+                         return unfocusedColor;
+-                    return colorFromMode(mode, Theme.primary, effectiveCustomColor(SettingsData.workspaceFocusedCustomColor, SettingsData.workspaceUnfocusedMonitorFocusedCustomColor), Theme.primary);
++                    return colorFromMode(mode, Theme.barColor("primary", root), effectiveCustomColor(SettingsData.workspaceFocusedCustomColor, SettingsData.workspaceUnfocusedMonitorFocusedCustomColor), Theme.barColor("primary", root));
+                 }
+ 
+                 readonly property color occupiedColor: {
+                     const mode = effectiveColorMode(SettingsData.workspaceOccupiedColorMode, SettingsData.workspaceUnfocusedMonitorOccupiedColorMode);
+                     if (mode === "none")
+                         return unfocusedColor;
+-                    return colorFromMode(mode, unfocusedColor, effectiveCustomColor(SettingsData.workspaceOccupiedCustomColor, SettingsData.workspaceUnfocusedMonitorOccupiedCustomColor), Theme.secondary);
++                    return colorFromMode(mode, unfocusedColor, effectiveCustomColor(SettingsData.workspaceOccupiedCustomColor, SettingsData.workspaceUnfocusedMonitorOccupiedCustomColor), Theme.barColor("secondary", root));
+                 }
+ 
+                 readonly property color urgentColor: colorFromMode(effectiveColorMode(SettingsData.workspaceUrgentColorMode, SettingsData.workspaceUnfocusedMonitorUrgentColorMode), Theme.error, effectiveCustomColor(SettingsData.workspaceUrgentCustomColor, SettingsData.workspaceUnfocusedMonitorUrgentCustomColor), Theme.error)
+ 
+-                readonly property color focusedBorderColor: colorFromMode(effectiveColorMode(SettingsData.workspaceFocusedBorderColor, SettingsData.workspaceUnfocusedMonitorBorderColor), Theme.primary, effectiveCustomColor(SettingsData.workspaceFocusedBorderCustomColor, SettingsData.workspaceUnfocusedMonitorBorderCustomColor), Theme.primary)
++                readonly property color focusedBorderColor: colorFromMode(effectiveColorMode(SettingsData.workspaceFocusedBorderColor, SettingsData.workspaceUnfocusedMonitorBorderColor), Theme.barColor("primary", root), effectiveCustomColor(SettingsData.workspaceFocusedBorderCustomColor, SettingsData.workspaceUnfocusedMonitorBorderCustomColor), Theme.barColor("primary", root))
+ 
+                 readonly property bool focusedBorderEnabledForMonitor: root.useUnfocusedAppearance ? SettingsData.workspaceUnfocusedMonitorBorderEnabled : SettingsData.workspaceFocusedBorderEnabled
+                 readonly property int focusedBorderThicknessForMonitor: root.useUnfocusedAppearance ? SettingsData.workspaceUnfocusedMonitorBorderThickness : SettingsData.workspaceFocusedBorderThickness
+@@ -1389,7 +1389,7 @@
+                 readonly property color quickshellIconActiveColor: getContrastingIconColor(activeColor)
+                 readonly property color quickshellIconInactiveColor: getContrastingIconColor(unfocusedColor)
+ 
+-                readonly property color requestedColor: isActive ? activeColor : isUrgent ? urgentColor : isPlaceholder ? Theme.surfaceTextLight : isHovered ? Theme.withAlpha(unfocusedColor, 0.7) : isOccupied ? occupiedColor : unfocusedColor
++                readonly property color requestedColor: isActive ? activeColor : isUrgent ? urgentColor : isPlaceholder ? Theme.barColor("surfaceTextLight", root) : isHovered ? Theme.withAlpha(unfocusedColor, 0.7) : isOccupied ? occupiedColor : unfocusedColor
+ 
+                 property bool colorAnimationReady: false
+ 
+@@ -1679,7 +1679,7 @@
+                     opacity: dragHandler.dragging ? 0.8 : 1.0
+ 
+                     border.width: dragHandler.dragging ? 2 : (isUrgent ? 2 : (isDropTarget ? 2 : 0))
+-                    border.color: dragHandler.dragging ? Theme.primary : (isUrgent ? urgentColor : (isDropTarget ? Theme.primary : Theme.withAlpha(Theme.primary, 0)))
++                    border.color: dragHandler.dragging ? Theme.barColor("primary", root) : (isUrgent ? urgentColor : (isDropTarget ? Theme.barColor("primary", root) : Theme.withAlpha(Theme.barColor("primary", root), 0)))
+ 
+                     transform: Translate {
+                         x: root.isVertical ? 0 : (dragHandler.dragging ? dragHandler.dragAxisOffset : 0)
+@@ -1753,7 +1753,7 @@
+                                             anchors.verticalCenter: parent.verticalCenter
+                                             name: loadedIconData?.value ?? ""
+                                             size: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+-                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                             weight: (isActive && !isPlaceholder) ? 500 : 400
+                                         }
+                                     }
+@@ -1767,7 +1767,7 @@
+                                             id: wsText
+                                             anchors.verticalCenter: parent.verticalCenter
+                                             text: loadedIconData?.value ?? ""
+-                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                             font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+                                             font.weight: (isActive && !isPlaceholder) ? Math.max(Theme.fontWeight, Font.DemiBold) : Theme.fontWeight
+                                         }
+@@ -1782,7 +1782,7 @@
+                                             id: wsIndexText
+                                             anchors.verticalCenter: parent.verticalCenter
+                                             text: loadedHasIcon ? (modelData?.name ?? "") : root.getWorkspaceIndex(modelData, index)
+-                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                            color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                             font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+                                             font.weight: (isActive && !isPlaceholder) ? Math.max(Theme.fontWeight, Font.DemiBold) : Theme.fontWeight
+                                         }
+@@ -1799,7 +1799,7 @@
+                                             readonly property string windowSession: modelData.windowSession || ""
+                                             readonly property bool appHighlightActive: SettingsData.workspaceActiveAppHighlightEnabled && modelData.active
+                                             readonly property color appBorderColor: appHighlightActive ? focusedBorderColor : Theme.primarySelected
+-                                            readonly property color appGlyphColor: appHighlightActive ? focusedBorderColor : Theme.primary
++                                            readonly property color appGlyphColor: appHighlightActive ? focusedBorderColor : Theme.barColor("primary", root)
+                                             readonly property real appOpacity: modelData.active ? 1.0 : rowAppHover.hovered ? 0.8 : 0.6
+ 
+                                             IconImage {
+@@ -1813,7 +1813,7 @@
+                                             Rectangle {
+                                                 anchors.fill: parent
+                                                 visible: !modelData.isQuickshell && !modelData.isSteamApp && rowAppIcon.status !== Image.Ready
+-                                                color: Theme.surfaceContainer
++                                                color: Theme.barColor("surfaceContainer", root)
+                                                 radius: Theme.cornerRadius * (root.appIconSize / 40)
+                                                 border.width: 1
+                                                 border.color: appBorderColor
+@@ -1831,7 +1831,7 @@
+                                             Rectangle {
+                                                 anchors.fill: parent
+                                                 visible: !modelData.isQuickshell && modelData.isSteamApp && rowSteamIcon.status !== Image.Ready
+-                                                color: Theme.surfaceContainer
++                                                color: Theme.barColor("surfaceContainer", root)
+                                                 radius: Theme.cornerRadius * (root.appIconSize / 40)
+                                                 border.width: 1
+                                                 border.color: appBorderColor
+@@ -1870,7 +1870,7 @@
+                                                 anchors.centerIn: parent
+                                                 size: root.appIconSize
+                                                 name: "sports_esports"
+-                                                color: appHighlightActive ? focusedBorderColor : Theme.widgetTextColor
++                                                color: appHighlightActive ? focusedBorderColor : Theme.barColor("widgetTextColor", root)
+                                                 opacity: modelData.active ? 1.0 : rowAppHover.hovered ? 0.8 : 0.6
+                                                 visible: modelData.isSteamApp && !modelData.icon
+                                             }
+@@ -1924,7 +1924,7 @@
+                                         anchors.horizontalCenter: parent.horizontalCenter
+                                         name: loadedIconData?.value ?? ""
+                                         size: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+-                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                         weight: (isActive && !isPlaceholder) ? 500 : 400
+                                     }
+ 
+@@ -1932,7 +1932,7 @@
+                                         visible: loadedHasIcon && loadedIconData?.type === "text"
+                                         anchors.horizontalCenter: parent.horizontalCenter
+                                         text: loadedIconData?.value ?? ""
+-                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                         font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+                                         font.weight: (isActive && !isPlaceholder) ? Math.max(Theme.fontWeight, Font.DemiBold) : Theme.fontWeight
+                                     }
+@@ -1941,7 +1941,7 @@
+                                         visible: (SettingsData.showWorkspaceIndex || SettingsData.showWorkspaceName) && !loadedHasIcon
+                                         anchors.horizontalCenter: parent.horizontalCenter
+                                         text: root.getWorkspaceIndex(modelData, index)
+-                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.surfaceContainer, 0.95) : isPlaceholder ? Theme.surfaceTextAlpha : Theme.surfaceTextMedium
++                                        color: (isActive || isUrgent) ? Theme.withAlpha(Theme.barColor("surfaceContainer", root), 0.95) : isPlaceholder ? Theme.barColor("surfaceTextAlpha", root) : Theme.barColor("surfaceTextMedium", root)
+                                         font.pixelSize: Theme.barTextSize(barThickness, barConfig?.fontScale, barConfig?.maximizeWidgetText)
+                                         font.weight: (isActive && !isPlaceholder) ? Math.max(Theme.fontWeight, Font.DemiBold) : Theme.fontWeight
+                                     }
+@@ -1957,7 +1957,7 @@
+                                             readonly property string windowSession: modelData.windowSession || ""
+                                             readonly property bool appHighlightActive: SettingsData.workspaceActiveAppHighlightEnabled && modelData.active
+                                             readonly property color appBorderColor: appHighlightActive ? focusedBorderColor : Theme.primarySelected
+-                                            readonly property color appGlyphColor: appHighlightActive ? focusedBorderColor : Theme.primary
++                                            readonly property color appGlyphColor: appHighlightActive ? focusedBorderColor : Theme.barColor("primary", root)
+                                             readonly property real appOpacity: modelData.active ? 1.0 : colAppHover.hovered ? 0.8 : 0.6
+ 
+                                             IconImage {
+@@ -1971,7 +1971,7 @@
+                                             Rectangle {
+                                                 anchors.fill: parent
+                                                 visible: !modelData.isQuickshell && !modelData.isSteamApp && colAppIcon.status !== Image.Ready
+-                                                color: Theme.surfaceContainer
++                                                color: Theme.barColor("surfaceContainer", root)
+                                                 radius: Theme.cornerRadius * (root.appIconSize / 40)
+                                                 border.width: 1
+                                                 border.color: appBorderColor
+@@ -1989,7 +1989,7 @@
+                                             Rectangle {
+                                                 anchors.fill: parent
+                                                 visible: !modelData.isQuickshell && modelData.isSteamApp && colSteamIcon.status !== Image.Ready
+-                                                color: Theme.surfaceContainer
++                                                color: Theme.barColor("surfaceContainer", root)
+                                                 radius: Theme.cornerRadius * (root.appIconSize / 40)
+                                                 border.width: 1
+                                                 border.color: appBorderColor
+@@ -2028,7 +2028,7 @@
+                                                 anchors.centerIn: parent
+                                                 size: root.appIconSize
+                                                 name: "sports_esports"
+-                                                color: appHighlightActive ? focusedBorderColor : Theme.widgetTextColor
++                                                color: appHighlightActive ? focusedBorderColor : Theme.barColor("widgetTextColor", root)
+                                                 opacity: modelData.active ? 1.0 : colAppHover.hovered ? 0.8 : 0.6
+                                                 visible: modelData.isSteamApp && !modelData.icon
+                                             }
+--- a/Modules/DankIsland/Activities/HomeCompact.qml
++++ b/Modules/DankIsland/Activities/HomeCompact.qml
+@@ -13,7 +13,7 @@
+     required property var controller
+     required property var systemModel
+ 
+-    readonly property string timeText: systemClock.date.toLocaleTimeString(I18n.locale(), SettingsData.getEffectiveTimeFormat())
++    readonly property string timeText: Qt.formatTime(systemClock.date, SettingsData.showSeconds ? "h:mm:ss AP" : "h:mm AP")
+     readonly property string hourText: {
+         const hours = systemClock.date.getHours();
+         if (SettingsData.use24HourClock)
+@@ -215,6 +215,8 @@
+         height: root.slotSize
+ 
+         HoverBackdrop {
++            // The media/search slot is icon-only: keep its hover backdrop square.
++            width: item.isMedia ? height : parent.width + Theme.spacingS
+             visible: item.isMedia || item.isWeather || item.isNotifications || item.isVolume || item.isBrightness || (item.isStatus && !item.usesBattery)
+             hovered: groupArea.containsMouse
+         }
+@@ -253,7 +255,7 @@
+                 reserveText: root.timeText.replace(/\d/g, "0")
+                 width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                 color: Theme.surfaceText
+-                font.pixelSize: root.textSize
++                font.pixelSize: Theme.fontSizeMedium + 2
+             }
+ 
+             Rectangle {
+--- a/Modules/DankIsland/Activities/MediaCompact.qml
++++ b/Modules/DankIsland/Activities/MediaCompact.qml
+@@ -18,6 +18,8 @@
+     readonly property real artworkSize: root.controller.compactIconSize
+     readonly property real textGutter: Theme.spacingXS
+     readonly property real cavaWidth: 20
++    readonly property real artworkVisualizerGap: Theme.spacingS
++    readonly property real artworkLeftGap: Theme.spacingS * 2
+     readonly property real minTextWidth: 48
+     readonly property real clockLeadPad: Theme.spacingXS / 2
+     readonly property real clockTrailPad: Theme.spacingS
+@@ -25,7 +27,7 @@
+     // A fully rounded side strip crowds square content, so the vertical face insets on both axes.
+     readonly property real verticalPad: Theme.spacingS
+     readonly property real verticalArtworkSize: Math.max(12, Math.min(root.artworkSize, root.width - root.verticalPad * 2))
+-    readonly property string timeText: systemClock.date.toLocaleTimeString(I18n.locale(), SettingsData.getEffectiveTimeFormat())
++    readonly property string timeText: Qt.formatTime(systemClock.date, SettingsData.showSeconds ? "h:mm:ss AP" : "h:mm AP")
+     readonly property string hourText: {
+         const hours = systemClock.date.getHours();
+         if (SettingsData.use24HourClock)
+@@ -36,7 +38,7 @@
+     readonly property bool clockVisible: root.controller.mediaClockVisible
+     readonly property real naturalTextWidth: Math.max(root.minTextWidth, titleMetrics.width, root.dense ? 0 : artistMetrics.width) + root.textGutter * 2
+     readonly property real measuredWidth: {
+-        let width = Theme.spacingS + root.artworkSize + Theme.spacingXS + root.cavaWidth + Theme.spacingXS + root.naturalTextWidth + Theme.spacingXS;
++        let width = root.artworkLeftGap + root.artworkSize + root.artworkVisualizerGap + root.cavaWidth + Theme.spacingXS + root.naturalTextWidth + Theme.spacingXS;
+         if (root.clockVisible)
+             width += clockText.width + Theme.spacingXS * 2 + Theme.spacingS;
+         return width;
+@@ -53,7 +55,7 @@
+     StyledTextMetrics {
+         id: titleMetrics
+ 
+-        font.pixelSize: Theme.fontSizeSmall
++        font.pixelSize: Theme.fontSizeMedium
+         font.weight: Font.DemiBold
+         text: root.mediaModel.title
+     }
+@@ -76,7 +78,7 @@
+ 
+         anchors {
+             left: parent.left
+-            leftMargin: Theme.spacingS
++            leftMargin: root.artworkLeftGap
+             verticalCenter: parent.verticalCenter
+         }
+         visible: !root.isVertical
+@@ -89,7 +91,7 @@
+         visible: !root.isVertical
+         anchors {
+             left: artwork.right
+-            leftMargin: Theme.spacingXS
++            leftMargin: root.artworkVisualizerGap
+             right: root.clockVisible ? rightActivity.left : parent.right
+             rightMargin: Theme.spacingXS
+             verticalCenter: parent.verticalCenter
+@@ -115,7 +117,7 @@
+                 width: parent.width - root.textGutter * 2
+                 text: root.mediaModel.title
+                 color: Theme.surfaceText
+-                font.pixelSize: Theme.fontSizeSmall
++                font.pixelSize: Theme.fontSizeMedium
+                 font.weight: Font.DemiBold
+                 active: root.enabled && root.mediaModel.playing
+                 holdStartMs: 1600
+@@ -164,7 +166,7 @@
+                 width: Math.ceil(Math.max(implicitWidth, reservedWidth))
+                 horizontalAlignment: Text.AlignHCenter
+                 color: Theme.surfaceText
+-                font.pixelSize: Theme.fontSizeSmall
++                font.pixelSize: Theme.fontSizeMedium + 2
+                 font.weight: Font.DemiBold
+             }
+ 
+--- a/Modules/DankIsland/DankIslandHostWindow.qml
++++ b/Modules/DankIsland/DankIslandHostWindow.qml
+@@ -287,6 +287,7 @@
+         launcherTransientSurfaceTracker: launcherTransientSurfaces
+         notificationTransientSurfaceTracker: notificationTransientSurfaces
+         effectiveScreen: root.screen
++        notchExclusionWidth: root.barConfig?.macNotchWidth ?? 0
+         hostOriginX: root.hostOriginX
+         hostOriginY: root.hostOriginY
+         reducedMotion: root.setting("islandReducedMotion") || SettingsData.reduceMotion || SettingsData.animationSpeed === SettingsData.AnimationSpeed.None
+--- a/Modules/DankIsland/DankIslandSurface.qml
++++ b/Modules/DankIsland/DankIslandSurface.qml
+@@ -27,17 +27,31 @@
+     property string palette: "default"
+     property bool highContrast: false
+     property real transparency: 1
++    property real notchExclusionWidth: 0
++    readonly property bool notchLeftAnchored: notchExclusionWidth > 0 && controller.edge === "top"
++
++    property real notchAnchorProgress: controller.expanded ? 0 : 1
++    property real notchPopupDrop: notchLeftAnchored && controller.expanded ? 44 : 0
++    Behavior on notchAnchorProgress {
++        NumberAnimation { duration: root.reducedMotion ? 0 : 220; easing.type: Easing.OutCubic }
++    }
++    Behavior on notchPopupDrop {
++        NumberAnimation { duration: root.reducedMotion ? 0 : 220; easing.type: Easing.OutCubic }
++    }
++
++    function alongPosition(span, offset, progress = notchAnchorProgress) {
++        if (notchLeftAnchored)
++            return (alongExtent - span) / 2 - progress * (notchExclusionWidth / 2 + 8 + span / 2);
++        return (alongExtent - span) / 2 + offset;
++    }
+ 
+     readonly property color surfaceColor: {
+         if (root.highContrast)
+             return Theme.surfaceContainerHighest;
+-        switch (root.palette) {
+-        case "bright":
+-            return Theme.surfaceBright;
+-        case "dim":
+-            return Theme.surfaceDim;
+-        }
+-        return Theme.surfaceContainerHigh;
++        const base = root.palette === "bright" ? Theme.surfaceBright : root.palette === "dim" ? Theme.surfaceDim : Theme.surfaceContainerHigh;
++        if (SettingsData.mediaCenterAmbientEnabled && !root.controller.expanded && MprisController.activePlayer && MprisController.stableTitle.length > 0)
++            return Qt.tint(base, Theme.withAlpha(MediaAccentService.artworkAccent, 0.28));
++        return base;
+     }
+     readonly property bool popupStyled: root.controller.expanded
+     readonly property real islandOpacity: Math.max(0, Math.min(1, root.transparency))
+@@ -71,12 +85,12 @@
+     readonly property real currentVisualWidth: motion.currentWidth
+     readonly property real currentVisualHeight: motion.currentHeight
+     readonly property real currentVisualCross: isVertical ? motion.currentWidth : motion.currentHeight
+-    readonly property real currentAlongPos: (alongExtent - (isVertical ? currentVisualHeight : currentVisualWidth)) / 2 + motion.currentOffsetAlong
+-    readonly property real currentCrossPos: farEdge ? crossExtent - motion.currentOffsetCross - currentVisualCross : motion.currentOffsetCross
++    readonly property real currentAlongPos: alongPosition(isVertical ? currentVisualHeight : currentVisualWidth, motion.currentOffsetAlong)
++    readonly property real currentCrossPos: farEdge ? crossExtent - motion.currentOffsetCross - currentVisualCross : motion.currentOffsetCross + root.notchPopupDrop
+     readonly property real currentVisualX: isVertical ? currentCrossPos : currentAlongPos
+     readonly property real currentVisualY: isVertical ? currentAlongPos : currentCrossPos
+-    readonly property real targetAlongPos: Math.round((alongExtent - (isVertical ? motion.targetHeight : motion.targetWidth)) / 2 + motion.targetOffsetAlong)
+-    readonly property real targetCrossPos: farEdge ? crossExtent - Math.round(motion.targetOffsetCross) - (isVertical ? motion.targetWidth : motion.targetHeight) : Math.round(motion.targetOffsetCross)
++    readonly property real targetAlongPos: Math.round(alongPosition(isVertical ? motion.targetHeight : motion.targetWidth, motion.targetOffsetAlong, controller.expanded ? 0 : 1))
++    readonly property real targetCrossPos: farEdge ? crossExtent - Math.round(motion.targetOffsetCross) - (isVertical ? motion.targetWidth : motion.targetHeight) : Math.round(motion.targetOffsetCross) + (root.notchLeftAnchored && controller.expanded ? 44 : 0)
+     readonly property real targetVisualX: isVertical ? targetCrossPos : targetAlongPos
+     readonly property real targetVisualY: isVertical ? targetAlongPos : targetCrossPos
+     readonly property real targetScreenX: targetVisualX + root.hostOriginX
+@@ -196,6 +210,26 @@
+         height: (motion.running ? Math.max(root.motionStartBounds.y + root.motionStartBounds.height, root.targetVisualY + motion.targetHeight) : root.targetVisualY + motion.targetHeight) + overshootBudget - y
+     }
+ 
++    ElevationShadow {
++        x: root.currentVisualX
++        y: root.currentVisualY
++        width: root.currentVisualWidth
++        height: root.currentVisualHeight
++        z: -1
++        targetColor: "transparent"
++        topLeftRadius: Math.max(0, motion.currentTopLeftRadius)
++        topRightRadius: Math.max(0, motion.currentTopRightRadius)
++        bottomLeftRadius: Math.max(0, motion.currentBottomLeftRadius)
++        bottomRightRadius: Math.max(0, motion.currentBottomRightRadius)
++        shadowEnabled: true
++        shadowBlurPx: 8
++        shadowSpreadPx: 0
++        shadowOffsetX: 0
++        shadowOffsetY: 2
++        shadowColor: Qt.rgba(0, 0, 0, 0.28)
++        level: ({blurPx: 8, spreadPx: 0, alpha: 0.28, ambient: {blurPx: 0, spreadPx: 0, alpha: 0}})
++    }
++
+     Rectangle {
+         id: island
+ 
+@@ -246,6 +280,8 @@
+             controller: root.controller
+             islandX: root.currentVisualX
+             islandY: root.currentVisualY
++            notchExclusionWidth: root.notchExclusionWidth
++            notchAnchorProgress: root.notchAnchorProgress
+             hostWidth: root.width
+             hostHeight: root.height
+             springTimeConstantMs: root.springTimeConstantMs
+@@ -291,9 +327,18 @@
+         id: fittsStrip
+ 
+         readonly property real targetCross: root.isVertical ? motion.targetWidth : motion.targetHeight
+-        readonly property real span: Math.max(root.descriptorAlong(root.controller.compactTarget), root.isVertical ? motion.targetHeight : motion.targetWidth)
+-        readonly property real edgeGap: root.farEdge ? Math.max(0, root.crossExtent - (root.targetCrossPos + targetCross)) : Math.max(0, root.targetCrossPos)
+-        readonly property real alongPos: Math.round((root.alongExtent - span) / 2 + motion.targetOffsetAlong)
++        readonly property bool notchBridge: root.notchLeftAnchored && root.controller.expanded
++        readonly property real targetSpan: Math.max(root.descriptorAlong(root.controller.compactTarget), root.isVertical ? motion.targetHeight : motion.targetWidth)
++        readonly property real targetAlong: Math.round(root.alongPosition(targetSpan, motion.targetOffsetAlong, root.controller.expanded ? 0 : 1))
++        readonly property real compactSpan: root.descriptorAlong(root.controller.compactTarget)
++        readonly property real compactAlong: Math.round(root.alongPosition(compactSpan, root.controller.compactTarget.offsetAlong, 1))
++        // Keep the original hover trigger reachable while the notch popup moves down
++        // and toward the screen center. The same region bridges the gap between them.
++        readonly property real alongPos: notchBridge ? Math.min(targetAlong, compactAlong) : targetAlong
++        readonly property real span: notchBridge ? Math.max(targetAlong + targetSpan, compactAlong + compactSpan) - alongPos : targetSpan
++        readonly property real edgeGap: notchBridge
++            ? Math.max(root.targetCrossPos, root.controller.compactTarget.offsetCross + root.descriptorCross(root.controller.compactTarget))
++            : root.farEdge ? Math.max(0, root.crossExtent - (root.targetCrossPos + targetCross)) : Math.max(0, root.targetCrossPos)
+         readonly property real crossPos: root.farEdge ? root.targetCrossPos + targetCross : 0
+ 
+         x: root.isVertical ? crossPos : alongPos
+--- a/Modules/DankIsland/IslandContentHost.qml
++++ b/Modules/DankIsland/IslandContentHost.qml
+@@ -15,6 +15,8 @@
+     required property var controller
+     required property real islandX
+     required property real islandY
++    property real notchExclusionWidth: 0
++    property real notchAnchorProgress: 1
+     required property real hostWidth
+     required property real hostHeight
+     required property real springTimeConstantMs
+@@ -144,7 +146,7 @@
+         required property string activity
+         readonly property var target: root.controller.compactTargetFor(activity)
+         readonly property bool isVertical: root.controller.isVertical
+-        readonly property real alongPos: isVertical ? Math.round((root.hostHeight - target.height) / 2 + target.offsetAlong) - Math.round(root.islandY) : Math.round((root.hostWidth - target.width) / 2 + target.offsetAlong) - Math.round(root.islandX)
++        readonly property real alongPos: isVertical ? Math.round((root.hostHeight - target.height) / 2 + target.offsetAlong) - Math.round(root.islandY) : Math.round(root.notchExclusionWidth > 0 && root.controller.edge === "top" ? (root.hostWidth - target.width) / 2 - root.notchAnchorProgress * (root.notchExclusionWidth / 2 + 8 + target.width / 2) : (root.hostWidth - target.width) / 2 + target.offsetAlong) - Math.round(root.islandX)
+         readonly property real crossPos: isVertical ? Math.round((parent.width - width) / 2) : Math.round((parent.height - height) / 2)
+ 
+         x: isVertical ? crossPos : alongPos
+--- a/Modules/DankIsland/IslandMediaSource.qml
++++ b/Modules/DankIsland/IslandMediaSource.qml
+@@ -17,6 +17,13 @@
+     readonly property string artUrl: TrackArtService.resolvedArtUrl || player?.trackArtUrl || ""
+     readonly property bool playing: !!player?.isPlaying
+ 
++    // The compact face is unloaded during popup transitions; hold the feed
++    // on the persistent model so Cava's autosensitivity is not reset.
++    readonly property QtObject visualizerRef: Ref {
++        service: CavaService
++        active: root.playing && SettingsData.audioVisualizerEnabled
++    }
++
+     Component.onCompleted: controller.updateMediaAvailability(available)
+     onAvailableChanged: controller.updateMediaAvailability(available)
+ }
+--- a/Modules/DankIsland/IslandSatelliteChrome.qml
++++ b/Modules/DankIsland/IslandSatelliteChrome.qml
+@@ -1,4 +1,5 @@
+ import QtQuick
++import QtQuick.Effects
+ import QtQuick.Shapes
+ import qs.Common
+ import qs.Services
+@@ -159,6 +160,17 @@
+ 
+         Shape {
+             anchors.fill: parent
++            layer.enabled: root.fillColor.a > 0
++            layer.effect: MultiEffect {
++                shadowEnabled: true
++                shadowColor: "black"
++                shadowOpacity: 0.28
++                shadowBlur: 0.5
++                blurMax: 16
++                shadowHorizontalOffset: 0
++                shadowVerticalOffset: 2
++                autoPaddingEnabled: true
++            }
+             preferredRendererType: Shape.CurveRenderer
+ 
+             ShapePath {
+--- a/Modules/DankIsland/IslandSatelliteHost.qml
++++ b/Modules/DankIsland/IslandSatelliteHost.qml
+@@ -52,7 +52,9 @@
+     readonly property real crossExtent: root.isVertical ? root.width : root.height
+     readonly property real stripThickness: root.hostWindow?.reservedStripThickness ?? (root.outerGap + root.barThickness)
+     readonly property real stripStart: root.crossFar ? root.crossExtent - root.stripThickness : 0
+-    readonly property real rowCross: root.stripStart + Theme.snap((root.stripThickness - root.barThickness) / 2, root.screenScale)
++    readonly property real rowCross: (root.satelliteConfig?.macNotchWidth ?? 0) > 0 && root.controller.edge === "top"
++        ? Theme.snap(root.outerGap + root.controller.compactThickness / 2 - root.barThickness / 2, root.screenScale)
++        : root.stripStart + Theme.snap((root.stripThickness - root.barThickness) / 2, root.screenScale)
+     readonly property bool backgroundEnabled: root.setting("islandSatelliteBackground")
+     readonly property bool spanEdges: root.edgeAligned
+     readonly property real chromePad: Theme.snap(root.innerPadding + Theme.spacingXS, root.screenScale)
+@@ -529,7 +531,7 @@
+     Item {
+         id: leadingInput
+ 
+-        readonly property real alongPos: root.edgeAligned ? root.edgeInset : Math.round(root.islandCurrentAlong - root.satelliteGap - alongSize)
++        readonly property real alongPos: root.edgeAligned ? root.edgeInset + (root.satelliteConfig?.leadingInsetExtra ?? 0) : Math.round(root.islandCurrentAlong - root.satelliteGap - alongSize)
+         readonly property real alongSize: root.visible ? (root.isVertical ? leadingWidgetSection.implicitHeight : leadingWidgetSection.implicitWidth) : 0
+         readonly property real crossSize: root.visible ? root.barThickness : 0
+ 
+--- a/Modules/Plugins/BasePill.qml
++++ b/Modules/Plugins/BasePill.qml
+@@ -1,4 +1,5 @@
+ import QtQuick
++import QtQuick.Effects
+ import qs.Common
+ import qs.Services
+ import qs.Widgets
+@@ -22,6 +23,7 @@
+     property real sectionSpacing: 0
+     property bool enableBackgroundHover: true
+     property bool enableCursor: true
++    property bool activateOnRelease: false
+     readonly property bool isMouseHovered: mouseArea.containsMouse
+     property bool isLeftBarEdge: false
+     property bool isRightBarEdge: false
+@@ -99,6 +101,17 @@
+ 
+         Rectangle {
+             id: background
++            layer.enabled: background.color.a > 0
++            layer.effect: MultiEffect {
++                shadowEnabled: true
++                shadowColor: "black"
++                shadowOpacity: 0.28
++                shadowBlur: 0.5
++                blurMax: 16
++                shadowHorizontalOffset: 0
++                shadowVerticalOffset: 2
++                autoPaddingEnabled: true
++            }
+             anchors.fill: parent
+             radius: (barConfig?.noBackground ?? false) ? 0 : Theme.cornerRadius
+             color: {
+@@ -109,7 +122,7 @@
+                 const rawTransparency = (root.barConfig && root.barConfig.widgetTransparency !== undefined) ? root.barConfig.widgetTransparency : 1.0;
+                 const isHovered = root.enableBackgroundHover && (mouseArea.containsMouse || (root.isHovered || false));
+                 const transparency = isHovered ? Math.max(0.3, rawTransparency) : rawTransparency;
+-                const baseColor = isHovered ? BlurService.hoverColor(Theme.widgetBaseHoverColor) : Theme.widgetBaseBackgroundColor;
++                const baseColor = isHovered ? BlurService.hoverColor(Theme.barColor("widgetBaseHoverColor", root)) : Theme.widgetBaseBackgroundColor;
+ 
+                 if (Theme.widgetBackgroundHasAlpha) {
+                     return Theme.blendAlpha(baseColor, transparency);
+@@ -165,7 +178,12 @@
+                     popoutTarget.setTriggerPosition(pos.x, pos.y, pos.width, section, currentScreen, barPosition, barThickness, root.barSpacing, root.barConfig);
+                 }
+             }
+-            root.clicked();
++            if (!root.activateOnRelease)
++                root.clicked();
++        }
++        onClicked: mouse => {
++            if (root.activateOnRelease && mouse.button === Qt.LeftButton)
++                root.clicked();
+         }
+         onWheel: function (wheelEvent) {
+             wheelEvent.accepted = false;
+--- a/Modules/Plugins/PluginComponent.qml
++++ b/Modules/Plugins/PluginComponent.qml
+@@ -47,6 +47,7 @@
+     property real popoutWidth: 400
+     property real popoutHeight: 0
+     property var pillClickAction: null
++    property bool pillActivateOnRelease: false
+     property var pillRightClickAction: null
+ 
+     property Component controlCenterWidget: null
+@@ -192,6 +193,7 @@
+         axis: root.axis
+         section: root.section
+         popoutTarget: hasPopout ? pluginPopout : null
++        activateOnRelease: root.pillActivateOnRelease
+         parentScreen: root.parentScreen
+         widgetThickness: root.widgetThickness
+         barThickness: root.barThickness
+@@ -260,6 +262,7 @@
+         axis: root.axis
+         section: root.section
+         popoutTarget: hasPopout ? pluginPopout : null
++        activateOnRelease: root.pillActivateOnRelease
+         parentScreen: root.parentScreen
+         widgetThickness: root.widgetThickness
+         barThickness: root.barThickness
