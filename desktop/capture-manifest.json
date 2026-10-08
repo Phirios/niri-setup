@@ -676,6 +676,109 @@
       "source": ".local/share/dms-shell-custom/Widgets/ScrollingText.qml",
       "patch_group": "dms-media",
       "sha256": "33439028989c646b5d92f5154bdbe6e92821e37d6015027973f722d01fc222dd"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/Cargo.toml",
+      "destination": "desktop/share/dms-kopuz-lyrics/Cargo.toml",
+      "captured_sha256": "c850d539f235d166cc6395fcdf9d3d8606220476e946a6cadbcb521955111806"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/Cargo.lock",
+      "destination": "desktop/share/dms-kopuz-lyrics/Cargo.lock",
+      "captured_sha256": "e68d5d50ee693f48e5c08b7dc4787fa67a1fbc8bca36a3f0224ab930a167e4c8"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/rebuild.sh",
+      "destination": "desktop/share/dms-kopuz-lyrics/rebuild.sh",
+      "captured_sha256": "52f80aff82aaa77a8850a5bf9b0eaab3f35b1efe140d2bafc2da18b09274d59b"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/README.md",
+      "destination": "desktop/share/dms-kopuz-lyrics/README.md",
+      "captured_sha256": "52494c47a2e841096b95153c96e935aaeaaf4d076600fcaccdeb422a78320e82"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/LICENSE",
+      "destination": "desktop/share/dms-kopuz-lyrics/LICENSE",
+      "captured_sha256": "2684098cbd7501a84c93cd947f3b32ad01eb955b20a43ad62ab4455eed4d1410"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics.rs",
+      "captured_sha256": "6508f1e59cd6f38576b5f4e00d959988c056f3f68dec0e91a9fddaf8a3a68ff3"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/main.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/main.rs",
+      "captured_sha256": "5c731d5c647fb47ebba125b1135f09f029b1a47232514699de4d2e2bd8a590da"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/model/Cargo.toml",
+      "destination": "desktop/share/dms-kopuz-lyrics/model/Cargo.toml",
+      "captured_sha256": "ee7d5dc09d8a4910fe738f5ea99379f295d2b34aa0ea85e3a5517141e7b894d7"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/model/src/lib.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/model/src/lib.rs",
+      "captured_sha256": "c3ae25cc0af61c47f33da11c2b1b5b6c7b1965121525f36ad0317fd76a495591"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/model/src/lyrics.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/model/src/lyrics.rs",
+      "captured_sha256": "19bc542bfd5ce944ea719b4223438597b32248167041d2f53ccec39fcda8e92d"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/apple_music.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/apple_music.rs",
+      "captured_sha256": "46337b668791989b2576838cf91eef9f975ea5413a8a35d598281b8db03da9f9"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/cache.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/cache.rs",
+      "captured_sha256": "5c1bc77ab64413e28d61d00752e4c55c434e80b07bf6949fb5eff98410b126ed"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/local.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/local.rs",
+      "captured_sha256": "690282efb56c1870f4b91cafd500cbfd76b70acae1b13bc15aba2968c89a9896"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/lrc.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/lrc.rs",
+      "captured_sha256": "f0ac890845f74772600016623183f846d327a0da9988f1302465548ae1080f5e"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/musixmatch.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/musixmatch.rs",
+      "captured_sha256": "9891bcb39db52a17d3992decc889169a134d66ea8aecbe40f55cb2a8d6def7ff"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/paxsenix.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/paxsenix.rs",
+      "captured_sha256": "52cb4c2249e5e8dace4935fed81420e4a8e353b41e3483f628ec33da8ed38389"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/request.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/request.rs",
+      "captured_sha256": "b8ce19c5b904b76203fcea6e6ad0623ba94f1ec55e9a3f3bb241917d0ce4585e"
+    },
+    {
+      "source": ".local/share/dms-kopuz-lyrics/src/lyrics/server.rs",
+      "destination": "desktop/share/dms-kopuz-lyrics/src/lyrics/server.rs",
+      "captured_sha256": "1b4b17c23c8545d9bf76db6f75d7d5f00af89034b555bbbad611df804f405d5d"
+    },
+    {
+      "destination": "desktop/bin/sunshine-mac-desktop",
+      "sha256": "94e10395311e450cb779f67535f8895a4aee39bcf82f0106198e6143ecc7b599"
+    },
+    {
+      "destination": "desktop/config/systemd/user/niri.service.d/10-upstream-shm.conf",
+      "sha256": "3a2bdc644a5cd622da1f76351600190717b633a147a60cedfaaa9ecab019d60c"
+    },
+    {
+      "destination": "desktop/config/environment.d/60-qt-theme.conf",
+      "sha256": "b8834a43f3783a7944f15ac14d478dc45259eda2c81a6b3d2517162d9e49ec8a"
     }
-  ]
+  ],
+  "kopuz_source_commit": "8d2f9626e20f9d34dcf81e9e40dd16fc354dc774"
 }

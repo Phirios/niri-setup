@@ -8,7 +8,7 @@ The live desktop was not reinstalled, reloaded or restarted during capture.
 
 - `config/hypr`: current Lua configuration, DMS bindings, outputs and fallback lock/wallpaper configuration.
 - `config/niri`: current Niri configuration and its referenced DMS/user includes.
-- `bin`: wallpaper, lock, translation, emoji, workspace and session helpers.
+- `bin`: wallpaper, lock, translation, emoji, workspace and session helpers, including the temporary Sunshine Mac display.
 - `share/hypr-smart-resize`: directional geometry engine, documentation and existing tests.
 - `lib/desktop-idle-guard` and `config/systemd/user`: video idle inhibition and palette reload integration.
 - `shell.json` and `plugins.json`: personal DMS preferences; these are intended to merge into settings, not replace runtime account state.
@@ -31,7 +31,8 @@ different account. Config files belong under `~/.config`, `bin` under `~/.local/
 `share` under `~/.local/share`, and `lib` under `~/.local/lib`. Back up existing files
 before restoring. The Hyprland GPU links are intentionally not stored as machine
 absolute symlinks: recreate `~/.config/hypr/gpu-rx9070` and `gpu-ryzen` for the actual
-GPU PCI paths on the target machine. Monitor names and modes also need review.
+GPU PCI paths on the target machine. Monitor names and modes also need review. The Niri service override refers to a separate
+local build at revision `1f03391`; that binary is not bundled.
 
 Build the lyrics helper with `share/dms-kopuz-lyrics/rebuild.sh`. Its vendored source
 is independent of the Kopuz checkout; build output is ignored. Rebuild GLSL shader

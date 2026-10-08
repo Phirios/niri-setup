@@ -1,0 +1,50 @@
+#!/usr/bin/python3
+"""Create a temporary 2560x1664 display for Sunshine; remove it on quit."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+OUTPUT = "MAC-DESKTOP"
+STATE = Path(os.environ.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid()))) / "sunshine-mac-desktop.json"
+
+def ctl(*args):
+    result = subprocess.run(["/usr/bin/hyprctl", *args], text=True, capture_output=True, check=True)
+    if args[0] in ("eval", "output") and result.stdout.strip() != "ok":
+        raise RuntimeError(result.stdout.strip() or result.stderr.strip())
+    return result.stdout
+
+def monitors():
+    return json.loads(ctl("-j", "monitors"))
+
+def stop():
+    if any(m["name"] == OUTPUT for m in monitors()):
+        ctl("output", "remove", OUTPUT)
+    if STATE.exists():
+        previous = json.loads(STATE.read_text()).get("monitor")
+        if previous and any(m["name"] == previous for m in monitors()):
+            ctl("eval", "hl.dispatch(hl.dsp.focus({ monitor = " + json.dumps(previous) + " }))")
+        STATE.unlink(missing_ok=True)
+
+if len(sys.argv) != 2 or sys.argv[1] not in ("start", "stop"):
+    sys.exit("Usage: sunshine-mac-desktop start|stop")
+if sys.argv[1] == "stop":
+    stop()
+else:
+    current = monitors()
+    if any(m["name"] == OUTPUT for m in current):
+        sys.exit("Mac Desktop is already active; quit it before starting again")
+    previous = next((m["name"] for m in current if m.get("focused")), None)
+    STATE.write_text(json.dumps({"monitor": previous}))
+    try:
+        ctl("output", "create", "headless", OUTPUT)
+        right = max((m["x"] + round(m["width"] / m["scale"]) for m in current), default=0)
+        ctl("eval", 'hl.monitor({ output = "MAC-DESKTOP", mode = "2560x1664@60", position = "' + str(right) + 'x0", scale = 1.3333333333 })')
+        target = next(m for m in monitors() if m["name"] == OUTPUT)
+        if (target["width"], target["height"]) != (2560, 1664) or abs(target["refreshRate"] - 60) > 0.1:
+            raise RuntimeError("Virtual display did not accept 2560x1664@60")
+        ctl("eval", 'hl.dispatch(hl.dsp.focus({ monitor = "MAC-DESKTOP" }))')
+    except Exception:
+        stop()
+        raise
