@@ -1,0 +1,38 @@
+{
+  "aiLimitCounter": {
+    "provider": "codex",
+    "helperPath": "~/.local/bin/ai-limit-counter",
+    "enabled": true
+  },
+  "liveMode": {
+    "silenceNotifications": true,
+    "keepAwake": true,
+    "enabled": true
+  },
+  "dmsAgent": {
+    "provider": "codex",
+    "codexModel": "",
+    "claudeModel": "haiku",
+    "pillLabel": "Codex",
+    "backgroundOpacity": 80,
+    "hotkey": "Mod+A",
+    "autoUpdate": false,
+    "voiceEnabled": true,
+    "voiceModel": "small",
+    "voiceLanguage": "auto",
+    "voiceVenv": "/home/phirios/.local/share/dms-ai-agent/whisper-venv",
+    "voiceDevice": "easyeffects_source",
+    "enabled": true
+  },
+  "liveWallpaper": {
+    "videoPath": "/home/phirios/Videos/Wallpapers/luminous-flora-magical-forest-moewalls-com.mp4",
+    "pauseWhenHidden": false,
+    "stopOnBattery": false,
+    "stopWhileGaming": true,
+    "enabled": true,
+    "mpvpaperPath": "~/.local/bin/mpvpaper"
+  },
+  "materialPlayer": {
+    "enabled": false
+  }
+}
